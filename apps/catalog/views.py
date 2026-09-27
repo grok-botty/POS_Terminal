@@ -1,9 +1,10 @@
-"""Management screens for the menu.
+"""Экраны управления меню.
 
-Rendered as classic Django views (not HTMX) because these pages are
-administrative and don't need in-place updates. Cashiers cannot reach them;
-:func:`_manager_required` enforces this at the view level in addition to the
-navigation guard in :mod:`apps.pos.context_processors`.
+Отрисовываются классическими Django-вьюхами (без HTMX), потому что эти
+страницы административные и не нуждаются в обновлении «на месте». Кассирам
+они недоступны; :func:`_manager_required` гарантирует это на уровне вьюхи в
+дополнение к скрытию пунктов навигации в
+:mod:`apps.pos.context_processors`.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from .models import Category, Modifier, ModifierGroup, Product
 
 
 def _manager_required(view):
-    """Restrict a view to users where :meth:`~accounts.User.is_manager` is true."""
+    """Ограничить вьюху пользователями, у которых :meth:`~accounts.User.is_manager` истинно."""
 
     @wraps(view)
     @login_required(login_url="accounts:login")
@@ -34,7 +35,7 @@ def _manager_required(view):
 
 @_manager_required
 def menu_dashboard(request: HttpRequest) -> HttpResponse:
-    """Overview of categories, products and modifier groups."""
+    """Обзор категорий, товаров и групп модификаторов."""
     context = {
         "categories": Category.objects.prefetch_related("products"),
         "modifier_groups": ModifierGroup.objects.prefetch_related("options"),

@@ -1,9 +1,10 @@
-"""Custom user model for the CashMachine POS.
+"""Кастомная модель пользователя CashMachine.
 
-The project uses a lightweight extension of :class:`~django.contrib.auth.models.AbstractUser`
-so the standard Django admin, permissions, groups and password hashing all work
-out of the box while still allowing a role-based distinction between cashiers
-and administrators.
+Модель — лёгкое расширение
+:class:`~django.contrib.auth.models.AbstractUser`. Это позволяет
+пользоваться стандартной админкой Django, системой прав, группами и
+хешированием паролей «из коробки», но при этом различать кассиров и
+администраторов по роли.
 """
 
 from __future__ import annotations
@@ -13,10 +14,11 @@ from django.db import models
 
 
 class User(AbstractUser):
-    """A staff member who can operate the register.
+    """Сотрудник, работающий за кассой.
 
-    Users with :attr:`role` set to :attr:`ROLE_ADMIN` can also manage the menu
-    and see analytics; regular users can only take orders and close the day.
+    Пользователи со значением :attr:`role`, равным :attr:`ROLE_ADMIN`,
+    дополнительно могут править меню и смотреть аналитику; обычные
+    пользователи могут только принимать заказы и закрывать смену.
     """
 
     ROLE_ADMIN = "admin"
@@ -39,7 +41,7 @@ class User(AbstractUser):
         verbose_name_plural = "Пользователи"
 
     def is_manager(self) -> bool:
-        """Return ``True`` if the user can access management screens."""
+        """Вернуть ``True``, если у пользователя есть доступ к разделам управления."""
         return self.is_superuser or self.role == self.ROLE_ADMIN
 
     def __str__(self) -> str:  # pragma: no cover - trivial

@@ -1,8 +1,8 @@
-"""Business logic for the orders app.
+"""Бизнес-логика приложения orders.
 
-All mutations to :class:`~apps.orders.models.Order` go through this module so
-templates and views stay thin.  Each function is transactional and safe to
-call from the shell.
+Все мутации :class:`~apps.orders.models.Order` идут через этот модуль, чтобы
+шаблоны и вьюхи оставались тонкими. Каждая функция транзакционна и безопасна
+для вызова из shell.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from .models import Order, OrderLine, OrderLineModifier
 
 @transaction.atomic
 def create_order(*, created_by=None, fulfilment: str = Order.Fulfilment.HERE) -> Order:
-    """Create a new empty order in :attr:`Order.Status.NEW`."""
+    """Создать новый пустой заказ в статусе :attr:`Order.Status.NEW`."""
     return Order.objects.create(created_by=created_by, fulfilment=fulfilment)
 
 
@@ -31,9 +31,9 @@ def add_line(
     quantity: int = 1,
     modifier_ids: Iterable[int] | None = None,
 ) -> OrderLine:
-    """Add a product to ``order`` with optional modifier selections."""
+    """Добавить товар в ``order`` вместе с опционально выбранными модификаторами."""
     if quantity < 1:
-        raise ValueError("quantity must be >= 1")
+        raise ValueError("Количество должно быть >= 1.")
 
     line = OrderLine.objects.create(
         order=order,
@@ -62,10 +62,10 @@ def add_line(
 
 
 def _validate_modifier_choice(product: Product, modifiers: list[Modifier]) -> None:
-    """Ensure the caller respects single-choice groups and product allow-list.
+    """Проверить, что вызывающий соблюдает правила single-choice-групп и allow-list товара.
 
-    A single-choice modifier group may contribute at most one option; groups
-    not associated with ``product`` are rejected.
+    Из single-choice-группы можно взять не более одной опции; группы, не
+    привязанные к ``product``, отклоняются.
     """
     allowed_groups = set(product.modifier_groups.values_list("id", flat=True))
     per_group: dict[int, int] = {}
@@ -88,7 +88,7 @@ def _validate_modifier_choice(product: Product, modifiers: list[Modifier]) -> No
 
 @transaction.atomic
 def change_line_quantity(line: OrderLine, quantity: int) -> None:
-    """Set ``line.quantity`` (0 removes the line) and recompute the order."""
+    """Задать ``line.quantity`` (0 удаляет позицию) и пересчитать заказ."""
     if quantity <= 0:
         order = line.order
         line.delete()
@@ -101,7 +101,7 @@ def change_line_quantity(line: OrderLine, quantity: int) -> None:
 
 @transaction.atomic
 def remove_line(line: OrderLine) -> None:
-    """Delete a line from its order and recompute the total."""
+    """Удалить позицию из заказа и пересчитать итоговую сумму."""
     order = line.order
     line.delete()
     order.recalc_total()
@@ -115,7 +115,7 @@ def update_order_meta(
     comment: str | None = None,
     fulfilment: str | None = None,
 ) -> Order:
-    """Update lightweight metadata on an order (name, comment, here/to-go)."""
+    """Обновить лёгкую метаинформацию заказа (имя гостя, комментарий, «в зале/с собой»)."""
     changed = []
     if guest_name is not None:
         order.guest_name = guest_name
@@ -133,7 +133,7 @@ def update_order_meta(
 
 @transaction.atomic
 def pay_order(order: Order) -> Order:
-    """Mark ``order`` paid and push it into the kitchen queue."""
+    """Отметить ``order`` оплаченным и отправить в кухонную очередь."""
     if not order.lines.exists():
         raise ValueError("Нельзя оплатить пустой заказ.")
     if order.is_paid:
@@ -147,7 +147,7 @@ def pay_order(order: Order) -> Order:
 
 @transaction.atomic
 def mark_ready(order: Order) -> Order:
-    """Advance ``order`` to :attr:`Order.Status.READY`."""
+    """Перевести ``order`` в статус :attr:`Order.Status.READY`."""
     order.status = Order.Status.READY
     order.ready_at = timezone.now()
     order.save(update_fields=["status", "ready_at"])
@@ -156,10 +156,10 @@ def mark_ready(order: Order) -> Order:
 
 @transaction.atomic
 def mark_all_ready() -> int:
-    """Mark every order currently ``IN_PROGRESS`` as ``READY``.
+    """Перевести все заказы со статусом ``IN_PROGRESS`` в ``READY``.
 
-    Returns the count of updated orders. Used by the «Все готовы» button in
-    the queue view.
+    Возвращает количество обновлённых заказов. Используется кнопкой
+    «Все готовы» на экране выдачи.
     """
     orders = list(Order.objects.filter(status=Order.Status.IN_PROGRESS))
     now = timezone.now()
@@ -172,7 +172,7 @@ def mark_all_ready() -> int:
 
 @transaction.atomic
 def hand_off(order: Order) -> Order:
-    """Mark ``order`` as delivered to the customer."""
+    """Отметить ``order`` как выданный гостю."""
     if order.status == Order.Status.NEW:
         raise ValueError("Заказ ещё не оплачен.")
     order.status = Order.Status.HANDED_OFF
@@ -183,14 +183,14 @@ def hand_off(order: Order) -> Order:
 
 @transaction.atomic
 def cancel_order(order: Order) -> Order:
-    """Cancel an order (only meaningful before hand-off)."""
+    """Отменить заказ (имеет смысл только до выдачи)."""
     order.status = Order.Status.CANCELLED
     order.save(update_fields=["status"])
     return order
 
 
 def totals_for_today() -> dict[str, Decimal | int]:
-    """Return today's live totals for the top-bar widget."""
+    """Вернуть текущие итоги за сегодня для виджета в верхней панели."""
     today = timezone.localdate()
     qs = Order.objects.filter(created_at__date=today, is_paid=True)
     revenue = sum((o.total_amount for o in qs), Decimal("0.00"))

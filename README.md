@@ -7,7 +7,7 @@ HTMX (никакой SPA).
 ## Быстрый старт (dev)
 
 ```bash
-git clone https://github.com/LotFullKa/POS_Terminal cashmachine
+git clone https://github.com/grok-botty/POS_Terminal cashmachine
 cd cashmachine
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
@@ -27,7 +27,7 @@ python manage.py runserver 0.0.0.0:8000
 ## Быстрый старт (Windows desktop)
 
 ```bat
-git clone https://github.com/LotFullKa/POS_Terminal
+git clone https://github.com/grok-botty/POS_Terminal
 cd POS_Terminal
 python -m venv .venv
 .venv\Scripts\activate

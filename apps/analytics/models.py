@@ -1,11 +1,12 @@
-"""End-of-day summaries.
+"""Сводки по итогам дня.
 
-Instead of recomputing per-day aggregates from :class:`~apps.orders.models.Order`
-each time someone opens the analytics dashboard, the cashier calls
-:func:`apps.analytics.services.close_day` which materialises a
-:class:`DailySummary` for the shift. This makes the dashboard fast, historical
-data immutable (even if orders are edited afterwards) and matches the
-«закрытие смены» expectation of the café workflow.
+Вместо того чтобы каждый раз при открытии дашборда аналитики пересчитывать
+дневные агрегаты из :class:`~apps.orders.models.Order`, кассир вызывает
+:func:`apps.analytics.services.close_day` — она материализует
+:class:`DailySummary` за смену. Это делает дашборд быстрым, фиксирует
+исторические данные (даже если задним числом кто-то отредактирует
+отдельный заказ) и соответствует привычному кафе-процессу «закрытия
+смены».
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from django.db import models
 
 
 class DailySummary(models.Model):
-    """A snapshot of the metrics for a single business day."""
+    """Снапшот метрик за один рабочий день."""
 
     date = models.DateField("Дата", unique=True, db_index=True)
     total_revenue = models.DecimalField(

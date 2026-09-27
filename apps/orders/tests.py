@@ -1,4 +1,4 @@
-"""Integration tests for the orders service layer."""
+"""Интеграционные тесты сервисного слоя приложения orders."""
 
 from decimal import Decimal
 

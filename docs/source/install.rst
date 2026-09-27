@@ -13,7 +13,7 @@
 
 .. code-block:: bash
 
-   git clone https://github.com/LotFullKa/POS_Terminal cashmachine
+   git clone https://github.com/grok-botty/POS_Terminal cashmachine
    cd cashmachine
    python -m venv .venv
    source .venv/bin/activate            # Windows: .venv\Scripts\activate

@@ -1,17 +1,16 @@
-"""Menu domain: categories, products and product modifiers.
+"""Домен меню: категории, товары и модификаторы товаров.
 
-The catalog is intentionally simple:
+Каталог намеренно устроен просто:
 
-* :class:`Category` groups products (e.g. напитки, десерты).
-* :class:`Product` is a purchasable position on the menu.
-* :class:`ModifierGroup` describes a set of options that can be attached to a
-  product (e.g. «Сироп», «Молоко»). Groups can be single-choice (choose one
-  milk) or multi-choice (add several syrups).
-* :class:`Modifier` is a single option inside a group with its own price
-  delta.
+* :class:`Category` группирует товары (например, «Напитки», «Десерты»).
+* :class:`Product` — продаваемая позиция меню.
+* :class:`ModifierGroup` описывает набор опций, которые можно прикрепить к
+  товару (например, «Сироп», «Молоко»). Группы бывают с одиночным выбором
+  (выбрать одно молоко) и с множественным (добавить несколько сиропов).
+* :class:`Modifier` — одна опция внутри группы со своей ценовой дельтой.
 
-Products opt-in to modifier groups so an espresso can have "milk" available
-while a filter coffee does not.
+Товары подписываются на нужные группы модификаторов: у эспрессо может быть
+опция «Молоко», а у фильтр-кофе — нет.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from django.utils.text import slugify
 
 
 class Category(models.Model):
-    """A logical grouping of products (tab in the register)."""
+    """Логическая группировка товаров (вкладка на экране кассы)."""
 
     name = models.CharField("Название", max_length=100)
     slug = models.SlugField("Slug", max_length=100, unique=True)
@@ -51,12 +50,12 @@ class Category(models.Model):
 
 
 class ModifierGroup(models.Model):
-    """A collection of :class:`Modifier` options a cashier can attach.
+    """Набор опций :class:`Modifier`, которые кассир может прикрепить к заказу.
 
-    A modifier group with :attr:`selection_mode` set to
-    :attr:`SELECTION_SINGLE` behaves like a radio group (choose one milk); a
-    group set to :attr:`SELECTION_MULTI` behaves like a checkbox list (add any
-    number of syrups).
+    Группа со значением :attr:`selection_mode` равным
+    :attr:`SELECTION_SINGLE` ведёт себя как радиогруппа (выбор одного
+    молока); группа с :attr:`SELECTION_MULTI` — как список чекбоксов
+    (можно добавить сколько угодно сиропов).
     """
 
     SELECTION_SINGLE = "single"
@@ -96,7 +95,7 @@ class ModifierGroup(models.Model):
 
 
 class Modifier(models.Model):
-    """One selectable option inside a :class:`ModifierGroup`."""
+    """Одна выбираемая опция внутри :class:`ModifierGroup`."""
 
     group = models.ForeignKey(
         ModifierGroup,
@@ -126,7 +125,7 @@ class Modifier(models.Model):
 
 
 class Product(models.Model):
-    """A menu position offered to customers."""
+    """Позиция меню, предлагаемая гостям."""
 
     name = models.CharField("Название", max_length=200)
     price = models.DecimalField(

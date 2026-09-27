@@ -1,9 +1,9 @@
-"""HTMX-driven order queue.
+"""Очередь заказов на HTMX.
 
-The queue view lives on its own page (``/orders/``) and is polled by HTMX so
-staff always see the freshest state without a hard refresh. Row-level actions
-(«Готов», «Отдан», отмена) return the updated fragment so the DOM stays in
-sync without a full page reload.
+Экран выдачи живёт на отдельной странице (``/orders/``) и опрашивается HTMX,
+чтобы смена всегда видела актуальное состояние без ручного обновления.
+Действия над строкой («Готов», «Отдан», отмена) возвращают обновлённый
+фрагмент, поэтому DOM остаётся синхронным без полной перезагрузки страницы.
 """
 
 from __future__ import annotations
@@ -37,13 +37,13 @@ def _queue_context() -> dict:
 
 @login_required(login_url="accounts:login")
 def queue(request: HttpRequest) -> HttpResponse:
-    """Full queue page."""
+    """Полная страница очереди."""
     return render(request, "orders/queue.html", _queue_context())
 
 
 @login_required(login_url="accounts:login")
 def queue_fragment(request: HttpRequest) -> HttpResponse:
-    """HTMX polling target — re-renders just the queue lists."""
+    """Цель HTMX-polling — перерисовывает только списки очереди."""
     return render(request, "orders/_queue.html", _queue_context())
 
 

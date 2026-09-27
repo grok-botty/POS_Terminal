@@ -1,4 +1,4 @@
-"""Idempotent first-run initialisation: migrate + create defaults + seed menu."""
+"""Идемпотентная инициализация первого запуска: migrate + дефолтные пользователи + меню."""
 
 from django.core.management.base import BaseCommand
 

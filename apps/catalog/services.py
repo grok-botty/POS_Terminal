@@ -1,7 +1,7 @@
-"""Business helpers for the catalog app.
+"""Бизнес-помощники приложения catalog.
 
-Kept separate from :mod:`views` so they can be unit-tested and reused from the
-CLI or from other apps without going through the HTTP layer.
+Вынесены отдельно от :mod:`views`, чтобы их можно было покрывать юнит-тестами
+и переиспользовать из CLI или других приложений, не проходя через HTTP-слой.
 """
 
 from __future__ import annotations
@@ -15,11 +15,12 @@ from .models import Category, Modifier, ModifierGroup, Product
 
 
 def seed_demo_menu() -> None:
-    """Populate the database with a small realistic menu.
+    """Заполнить БД небольшим реалистичным меню.
 
-    Called by the :mod:`apps.catalog.management.commands.seed_demo`
-    management command and by :func:`apps.pos.bootstrap.ensure_bootstrapped`
-    when the catalog is empty on the very first launch.
+    Вызывается management-командой
+    :mod:`apps.catalog.management.commands.seed_demo`, а также функцией
+    :func:`apps.pos.bootstrap.ensure_bootstrapped` при первом запуске,
+    когда каталог пуст.
     """
 
     if Category.objects.exists():

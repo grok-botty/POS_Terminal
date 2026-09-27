@@ -1,4 +1,4 @@
-"""WSGI entry point for the CashMachine project."""
+"""Точка входа WSGI для проекта CashMachine."""
 
 import os
 

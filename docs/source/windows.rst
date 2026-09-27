@@ -20,7 +20,7 @@ Windows-компьютере поднимает локальный Django, от�
 
    .. code-block:: bat
 
-      git clone https://github.com/LotFullKa/POS_Terminal
+      git clone https://github.com/grok-botty/POS_Terminal
       cd POS_Terminal
       python -m venv .venv
       .venv\Scripts\activate

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Django's command-line utility for administrative tasks."""
+"""Утилита командной строки Django для административных задач."""
 
 import os
 import sys
@@ -11,8 +11,9 @@ def main() -> None:
         from django.core.management import execute_from_command_line
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
-            "Couldn't import Django. Are you sure it's installed and available "
-            "on your PYTHONPATH? Did you forget to activate a virtual environment?"
+            "Не удалось импортировать Django. Убедитесь, что он установлен и "
+            "доступен в PYTHONPATH. Возможно, вы забыли активировать "
+            "виртуальное окружение."
         ) from exc
     execute_from_command_line(sys.argv)
 

@@ -3,7 +3,7 @@ from django.contrib.auth import authenticate
 
 
 class LoginForm(forms.Form):
-    """Simple username + password form used by :func:`views.login_view`."""
+    """Простая форма «логин + пароль», используемая :func:`views.login_view`."""
 
     username = forms.CharField(
         label="Логин",

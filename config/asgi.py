@@ -1,4 +1,4 @@
-"""ASGI entry point for the CashMachine project."""
+"""Точка входа ASGI для проекта CashMachine."""
 
 import os
 

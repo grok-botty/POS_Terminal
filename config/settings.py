@@ -1,21 +1,21 @@
 """
-Django settings for the CashMachine POS project.
+Настройки Django для POS-приложения CashMachine.
 
-The project is organised as a small, self-contained monolith intended to be
-run either as a normal Django web application or as a bundled desktop
-application on Windows (via :mod:`desktop.launcher` and PyInstaller).
+Проект собран как небольшой самодостаточный монолит. Его можно запускать
+двумя способами: как обычное Django-приложение или как настольное
+приложение под Windows (через :mod:`desktop.launcher` и PyInstaller).
 
-Environment variables of interest:
+Полезные переменные окружения:
 
 ``CASHMACHINE_SECRET_KEY``
-    Overrides the default (insecure) development secret key.
+    Переопределяет стандартный (незащищённый) секретный ключ разработки.
 ``CASHMACHINE_DEBUG``
-    Set to ``"0"`` to disable ``DEBUG`` mode.
+    Значение ``"0"`` отключает режим ``DEBUG``.
 ``CASHMACHINE_DB_PATH``
-    Explicit path to the SQLite database file. When unset, a per-user path
-    under the OS-appropriate data directory is used.
+    Явный путь к SQLite-базе. Если не задан, используется путь под
+    пользовательской директорией, подходящей для текущей ОС.
 ``CASHMACHINE_ALLOWED_HOSTS``
-    Comma-separated list of hosts allowed to serve the app.
+    Список разрешённых хостов через запятую.
 """
 
 from __future__ import annotations

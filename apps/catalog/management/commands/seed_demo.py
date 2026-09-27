@@ -1,4 +1,4 @@
-"""Seed the catalog with a demo menu (idempotent)."""
+"""Заполнить каталог демо-меню (идемпотентно)."""
 
 from django.core.management.base import BaseCommand
 

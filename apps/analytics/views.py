@@ -1,7 +1,7 @@
-"""Analytics dashboard and end-of-day close action.
+"""Дашборд аналитики и действие «закрыть день».
 
-Only managers can see the dashboard; regular cashiers can trigger the daily
-close from the POS screen if allowed.
+Дашборд доступен только менеджерам; обычные кассиры могут инициировать
+закрытие смены с экрана кассы, если это разрешено.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def dashboard(request: HttpRequest) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @require_http_methods(["POST"])
 def close_day_view(request: HttpRequest) -> HttpResponse:
-    """Close today's shift and redirect to the register."""
+    """Закрыть сегодняшнюю смену и вернуть пользователя на экран кассы."""
     summary = services.close_day(closed_by=request.user)
     messages.success(
         request,

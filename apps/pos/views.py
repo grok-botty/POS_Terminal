@@ -1,10 +1,11 @@
-"""POS register views (HTMX-driven).
+"""Вьюхи экрана кассы (на HTMX).
 
-The register is intentionally single-page: category tabs, product grid,
-current-order panel and quick-add modifier picker all live on one screen so
-cashiers make fewer clicks.  Every interaction that changes state issues an
-HTMX request which returns the updated order-panel fragment; the product
-grid does not need to re-render on add-to-order.
+Экран кассы намеренно одностраничный: вкладки категорий, сетка товаров,
+панель текущего заказа и модалка выбора модификаторов живут на одной
+странице — так кассир делает меньше кликов. Любое действие, меняющее
+состояние, делает HTMX-запрос и получает в ответ обновлённый фрагмент
+панели заказа; при добавлении товара сетку товаров перерисовывать не
+нужно.
 """
 
 from __future__ import annotations
@@ -24,11 +25,11 @@ SESSION_ORDER_KEY = "current_order_id"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Помощники
 # ---------------------------------------------------------------------------
 
 def _get_or_create_current_order(request: HttpRequest) -> Order:
-    """Return the cashier's in-progress order, creating one if needed."""
+    """Вернуть черновик заказа кассира, создав его при необходимости."""
     order_id = request.session.get(SESSION_ORDER_KEY)
     if order_id:
         try:
@@ -67,12 +68,12 @@ def _register_context(request: HttpRequest, active_category: Category | None = N
 
 
 # ---------------------------------------------------------------------------
-# Main screen
+# Основной экран
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
 def register(request: HttpRequest) -> HttpResponse:
-    """Full register page (initial load)."""
+    """Полная страница кассы (первичная загрузка)."""
     category_id = request.GET.get("category")
     category = None
     if category_id:
@@ -82,7 +83,7 @@ def register(request: HttpRequest) -> HttpResponse:
 
 @login_required(login_url="accounts:login")
 def order_panel(request: HttpRequest) -> HttpResponse:
-    """HTMX target: re-render only the right-hand current-order panel."""
+    """HTMX-цель: перерисовать только правую панель текущего заказа."""
     order = _get_or_create_current_order(request)
     return render(
         request,
@@ -93,29 +94,30 @@ def order_panel(request: HttpRequest) -> HttpResponse:
 
 @login_required(login_url="accounts:login")
 def products_grid(request: HttpRequest) -> HttpResponse:
-    """HTMX target: switch category without full page reload."""
+    """HTMX-цель: переключить категорию без полной перезагрузки страницы."""
     category_id = request.GET.get("category")
     category = get_object_or_404(Category, pk=category_id, is_active=True) if category_id else None
     return render(request, "pos/_products.html", _register_context(request, category))
 
 
 # ---------------------------------------------------------------------------
-# Modifier picker
+# Пикер модификаторов
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
 def modifier_picker(request: HttpRequest, product_id: int) -> HttpResponse:
-    """Return the modifier-picker dialog for a specific product.
+    """Вернуть диалог выбора модификаторов для конкретного товара.
 
-    Products with no modifier groups skip the dialog: HTMX simply POSTs to
-    :func:`add_line` directly. This keeps the fast path at exactly one click.
+    У товаров без групп модификаторов диалог пропускается: HTMX сразу
+    POST-ит на :func:`add_line`. Это оставляет быстрый путь ровно в один
+    клик.
     """
     product = get_object_or_404(Product, pk=product_id, is_active=True)
     groups = list(
         product.modifier_groups.prefetch_related("options").order_by("order", "name")
     )
     if not groups:
-        # No dialog needed, add immediately.
+        # Диалог не нужен — добавляем сразу.
         order = _get_or_create_current_order(request)
         order_services.add_line(order, product, quantity=1)
         return render(
@@ -133,7 +135,7 @@ def modifier_picker(request: HttpRequest, product_id: int) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @require_http_methods(["POST"])
 def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
-    """Add a product (with optional modifiers) to the current order."""
+    """Добавить товар (с опциональными модификаторами) в текущий заказ."""
     product = get_object_or_404(Product, pk=product_id, is_active=True)
     modifier_ids = [int(x) for x in request.POST.getlist("modifiers") if x.isdigit()]
     order = _get_or_create_current_order(request)
@@ -149,7 +151,7 @@ def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# Line mutations
+# Действия над позициями
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
@@ -177,13 +179,13 @@ def line_remove(request: HttpRequest, line_id: int) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# Order meta + payment
+# Мета-данные заказа и оплата
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
 @require_http_methods(["POST"])
 def order_meta(request: HttpRequest) -> HttpResponse:
-    """Update guest name / comment / here-or-to-go on the current order."""
+    """Обновить у текущего заказа имя гостя, комментарий и «в зале/с собой»."""
     order = _get_or_create_current_order(request)
     order_services.update_order_meta(
         order,
@@ -197,7 +199,7 @@ def order_meta(request: HttpRequest) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @require_http_methods(["POST"])
 def order_pay(request: HttpRequest) -> HttpResponse:
-    """Mark the current order paid and reset the register for the next guest."""
+    """Отметить текущий заказ оплаченным и подготовить кассу к следующему гостю."""
     order = _get_or_create_current_order(request)
     try:
         order_services.pay_order(order)
@@ -216,7 +218,7 @@ def order_pay(request: HttpRequest) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @require_http_methods(["POST"])
 def order_discard(request: HttpRequest) -> HttpResponse:
-    """Delete the current draft order and start a fresh one."""
+    """Удалить текущий черновик заказа и открыть свежий."""
     order_id = request.session.get(SESSION_ORDER_KEY)
     if order_id:
         Order.objects.filter(pk=order_id, is_paid=False).delete()

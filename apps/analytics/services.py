@@ -1,4 +1,4 @@
-"""Aggregate helpers backing the analytics dashboard and the end-of-day flow."""
+"""Агрегатные помощники, на которых работают дашборд аналитики и закрытие дня."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ from .models import DailySummary
 
 @transaction.atomic
 def close_day(*, closed_by=None, target_date: date | None = None) -> DailySummary:
-    """Snapshot totals for ``target_date`` (defaults to today).
+    """Зафиксировать итоги за ``target_date`` (по умолчанию — сегодня).
 
-    The function is idempotent: closing an already-closed day updates the
-    existing snapshot instead of creating a duplicate.
+    Функция идемпотентна: закрытие уже закрытого дня обновляет
+    существующий снапшот, а не создаёт дубликат.
     """
     day = target_date or timezone.localdate()
 
@@ -47,7 +47,7 @@ def close_day(*, closed_by=None, target_date: date | None = None) -> DailySummar
 
 
 def revenue_series(days: int = 14) -> list[dict]:
-    """Return a list of ``{date, revenue, orders}`` for the last ``days`` days."""
+    """Вернуть список ``{date, revenue, orders}`` за последние ``days`` дней."""
     today = timezone.localdate()
     start = today - timedelta(days=days - 1)
     by_date = {s.date: s for s in DailySummary.objects.filter(date__gte=start, date__lte=today)}
@@ -67,7 +67,7 @@ def revenue_series(days: int = 14) -> list[dict]:
 
 
 def top_products(days: int = 30, limit: int = 10) -> list[dict]:
-    """Return the top-selling products in the last ``days`` days."""
+    """Вернуть топ товаров по продажам за последние ``days`` дней."""
     start = timezone.localdate() - timedelta(days=days - 1)
     rows = (
         OrderLine.objects.filter(order__created_at__date__gte=start, order__is_paid=True)
@@ -82,13 +82,13 @@ def top_products(days: int = 30, limit: int = 10) -> list[dict]:
 
 
 def hourly_load(days: int = 7) -> list[dict]:
-    """Return counts of paid orders per hour of day for the last ``days`` days."""
+    """Вернуть количество оплаченных заказов по часам за последние ``days`` дней."""
     start = timezone.localdate() - timedelta(days=days - 1)
     orders = Order.objects.filter(
         created_at__date__gte=start, is_paid=True
     ).values_list("created_at", flat=True)
 
-    buckets = {h: 0 for h in range(7, 22)}  # café hours
+    buckets = {h: 0 for h in range(7, 22)}  # часы работы кофейни
     for ts in orders:
         local = timezone.localtime(ts)
         h = local.hour

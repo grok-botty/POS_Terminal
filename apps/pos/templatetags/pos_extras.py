@@ -1,4 +1,4 @@
-"""Small template helpers used by the POS templates."""
+"""Небольшие шаблонные помощники, используемые шаблонами кассы."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ register = template.Library()
 
 @register.filter(name="line_subtotal")
 def line_subtotal(line):
-    """Return the subtotal of an :class:`~apps.orders.models.OrderLine`."""
+    """Вернуть подытог :class:`~apps.orders.models.OrderLine`."""
     return line.subtotal()
 
 
 @register.filter(name="minutes")
 def minutes(seconds):
-    """Format a duration in seconds as ``M мин SS с``."""
+    """Отформатировать длительность в секундах как ``M мин SS с``."""
     if not seconds:
         return "—"
     m, s = divmod(int(seconds), 60)

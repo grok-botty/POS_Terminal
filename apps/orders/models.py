@@ -1,20 +1,19 @@
-"""Core order lifecycle models.
+"""Модели жизненного цикла заказа.
 
-An :class:`Order` moves through the following statuses (see
-:attr:`Order.Status`)::
+:class:`Order` проходит по следующим статусам (см. :attr:`Order.Status`)::
 
     NEW -> IN_PROGRESS -> READY -> HANDED_OFF
 
-The typical shift looks like this:
+Типовая смена выглядит так:
 
-1. Cashier composes an :class:`Order` with :class:`OrderLine` items and
-   optional per-line :class:`OrderLineModifier` selections.
-2. When the customer pays, :attr:`Order.is_paid` flips to ``True`` and the
-   order enters the kitchen queue (``IN_PROGRESS``).
-3. Barista marks it :attr:`Order.Status.READY`. Cashier hands it off
+1. Кассир собирает :class:`Order` из позиций :class:`OrderLine` и,
+   опционально, привязывает к каждой позиции :class:`OrderLineModifier`.
+2. Когда гость оплачивает заказ, :attr:`Order.is_paid` становится
+   ``True``, а сам заказ попадает в кухонную очередь (``IN_PROGRESS``).
+3. Бариста помечает заказ :attr:`Order.Status.READY`. Кассир выдаёт его
    (:attr:`Order.Status.HANDED_OFF`).
-4. At the end of the shift :func:`apps.orders.services.close_day` snapshots
-   the totals into :class:`apps.analytics.models.DailySummary`.
+4. В конце смены :func:`apps.orders.services.close_day` фиксирует итоги в
+   :class:`apps.analytics.models.DailySummary`.
 """
 
 from __future__ import annotations
@@ -28,10 +27,10 @@ from django.utils import timezone
 
 
 def _generate_short_code() -> str:
-    """Return a short human-friendly identifier such as ``B7-42``.
+    """Вернуть короткий человекочитаемый идентификатор вида ``B7-42``.
 
-    We intentionally avoid characters that are easy to mistype on a phone or
-    misread on a receipt (``0/O``, ``1/I``).
+    Мы намеренно исключаем символы, которые легко перепутать на телефоне
+    или на распечатанном чеке (``0/O``, ``1/I``).
     """
     import secrets
 
@@ -41,11 +40,11 @@ def _generate_short_code() -> str:
 
 
 class Order(models.Model):
-    """A single guest order.
+    """Заказ одного гостя.
 
-    The queue view (:mod:`apps.orders.views`) filters by
-    :attr:`is_paid` / :attr:`status`; the analytics app aggregates by
-    :attr:`created_at` and :attr:`total_amount`.
+    Вьюха очереди (:mod:`apps.orders.views`) фильтрует записи по
+    :attr:`is_paid` / :attr:`status`; приложение аналитики агрегирует по
+    :attr:`created_at` и :attr:`total_amount`.
     """
 
     class Status(models.TextChoices):
@@ -103,10 +102,11 @@ class Order(models.Model):
         ordering = ("-created_at",)
 
     def recalc_total(self) -> Decimal:
-        """Recompute :attr:`total_amount` from the current lines/modifiers.
+        """Пересчитать :attr:`total_amount` по текущим позициям и модификаторам.
 
-        Persists and returns the new total. Called automatically by
-        :func:`apps.orders.services` whenever lines or modifiers change.
+        Сохраняет и возвращает новую сумму. Вызывается автоматически из
+        :func:`apps.orders.services` при любом изменении позиций или
+        модификаторов.
         """
         total = Decimal("0.00")
         for line in self.lines.all():
@@ -116,7 +116,7 @@ class Order(models.Model):
         return total
 
     def is_active(self) -> bool:
-        """Return ``True`` if the order should appear on the active queue."""
+        """Вернуть ``True``, если заказ должен показываться в активной очереди."""
         return self.status in {
             self.Status.NEW,
             self.Status.IN_PROGRESS,
@@ -124,7 +124,7 @@ class Order(models.Model):
         }
 
     def waiting_seconds(self) -> int:
-        """Seconds since the order was paid; used to nudge staff."""
+        """Сколько секунд прошло с оплаты заказа; используется, чтобы поторопить смену."""
         if not self.paid_at:
             return 0
         end = self.handed_off_at or self.ready_at or timezone.now()
@@ -136,7 +136,7 @@ class Order(models.Model):
 
 
 class OrderLine(models.Model):
-    """A single :class:`~apps.catalog.models.Product` in an :class:`Order`."""
+    """Одна позиция :class:`~apps.catalog.models.Product` внутри :class:`Order`."""
 
     order = models.ForeignKey(
         Order, on_delete=models.CASCADE, related_name="lines", verbose_name="Заказ"
@@ -158,7 +158,7 @@ class OrderLine(models.Model):
         verbose_name_plural = "Позиции заказа"
 
     def subtotal(self) -> Decimal:
-        """Return line total including modifier price deltas."""
+        """Вернуть сумму по позиции с учётом ценовых дельт модификаторов."""
         modifiers_total = sum(
             (m.price_delta_snapshot for m in self.modifiers.all()),
             Decimal("0.00"),
@@ -170,7 +170,7 @@ class OrderLine(models.Model):
 
 
 class OrderLineModifier(models.Model):
-    """A single :class:`~apps.catalog.models.Modifier` attached to a line."""
+    """Один :class:`~apps.catalog.models.Modifier`, прикреплённый к позиции."""
 
     line = models.ForeignKey(
         OrderLine,

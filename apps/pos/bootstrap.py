@@ -1,13 +1,13 @@
-"""Idempotent first-run helpers.
+"""Идемпотентные помощники первого запуска.
 
-The desktop launcher calls :func:`ensure_bootstrapped` on start-up so that a
-fresh install can be used immediately without running any management
-commands.  It:
+Настольный лаунчер вызывает :func:`ensure_bootstrapped` при старте, чтобы
+свежей установкой можно было пользоваться сразу, без ручного выполнения
+management-команд. Функция:
 
-1. Applies pending migrations.
-2. Creates a default ``admin/admin`` and ``cashier/cashier`` user if the user
-   table is empty.
-3. Seeds a small demo menu if the catalog is empty.
+1. Применяет ожидающие миграции.
+2. Создаёт дефолтных пользователей ``admin/admin`` и ``cashier/cashier``,
+   если таблица пользователей пуста.
+3. Заполняет небольшое демо-меню, если каталог пуст.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _ensure_default_users() -> None:
     admin.is_superuser = True
     admin.save(update_fields=["is_staff", "is_superuser"])
     User.objects.create_user(username="cashier", password="cashier", role="cashier")
-    log.info("Created default users: admin/admin and cashier/cashier")
+    log.info("Созданы дефолтные пользователи: admin/admin и cashier/cashier")
 
 
 def _ensure_demo_menu() -> None:
@@ -46,7 +46,7 @@ def _ensure_demo_menu() -> None:
 
 
 def ensure_bootstrapped() -> None:
-    """Run all first-launch initialisation steps."""
+    """Выполнить все шаги инициализации первого запуска."""
     connections.close_all()
     _apply_migrations()
     _ensure_default_users()
@@ -54,7 +54,7 @@ def ensure_bootstrapped() -> None:
 
 
 def db_ready() -> bool:
-    """Return ``True`` if the ORM can talk to the database."""
+    """Вернуть ``True``, если ORM может достучаться до базы данных."""
     try:
         conn = connections[DEFAULT_DB_ALIAS]
         conn.ensure_connection()

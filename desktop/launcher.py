@@ -1,12 +1,12 @@
-"""CashMachine desktop launcher.
+"""Настольный лаунчер CashMachine.
 
-Runs the Django application on a random loopback port in a background
-thread and opens it inside a native window using :mod:`pywebview`. When
-pywebview is unavailable (e.g. the user has not installed the desktop
-extras) the launcher falls back to the system browser.
+Запускает Django-приложение в фоновом потоке на свободном loopback-порту
+и открывает его в нативном окне через :mod:`pywebview`. Если pywebview
+недоступен (например, пользователь не установил desktop-зависимости),
+лаунчер откроет приложение в системном браузере.
 
-The same file works both as a normal script — ``python desktop/launcher.py``
-— and as the entry point of a PyInstaller one-file bundle produced by
+Файл работает и как обычный скрипт — ``python desktop/launcher.py``, — и
+как точка входа в one-file сборку PyInstaller, собранную по
 :mod:`desktop.pyinstaller_spec` / ``desktop/build.bat``.
 """
 
@@ -26,14 +26,14 @@ LOG = logging.getLogger("cashmachine.launcher")
 
 
 # ---------------------------------------------------------------------------
-# Path bootstrap: make sure Django can find our project when frozen.
+# Настройка путей: убеждаемся, что Django находит наш проект во frozen-режиме.
 # ---------------------------------------------------------------------------
 
 def _bundle_dir() -> Path:
-    """Return the directory that contains ``manage.py`` and ``config/``.
+    """Вернуть директорию с ``manage.py`` и пакетом ``config/``.
 
-    When frozen with PyInstaller the app is extracted to
-    :data:`sys._MEIPASS`; otherwise we use the repository root.
+    При запуске из PyInstaller приложение распаковывается в
+    :data:`sys._MEIPASS`; иначе используется корень репозитория.
     """
     if getattr(sys, "frozen", False):
         return Path(getattr(sys, "_MEIPASS"))  # type: ignore[attr-defined]
@@ -46,7 +46,7 @@ sys.path.insert(0, str(BUNDLE))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 os.environ.setdefault("CASHMACHINE_DEBUG", "0")
 
-# Configure logging to a file next to the user's DB so bug reports are easy.
+# Логи пишем в файл рядом с пользовательской БД, чтобы легко собирать отчёты.
 try:
     from config.settings import _default_db_path  # type: ignore
 
@@ -62,11 +62,11 @@ except Exception:  # pragma: no cover - fall back to stderr
 
 
 # ---------------------------------------------------------------------------
-# Port / server helpers
+# Помощники: порт и сервер
 # ---------------------------------------------------------------------------
 
 def _pick_port(default: int = 8765) -> int:
-    """Return a free port to bind to, preferring ``default``."""
+    """Вернуть свободный порт, начиная попытки с ``default``."""
     for candidate in (default, 8766, 8767, 0):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -75,7 +75,7 @@ def _pick_port(default: int = 8765) -> int:
                 return port
             except OSError:
                 continue
-    raise RuntimeError("No free loopback port available.")
+    raise RuntimeError("Не найдено свободного loopback-порта.")
 
 
 def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
@@ -93,7 +93,7 @@ def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
 
 
 def _start_server(host: str, port: int) -> threading.Thread:
-    """Launch the Django development server on ``host:port`` in a thread."""
+    """Запустить Django dev-сервер на ``host:port`` в отдельном потоке."""
     import django
 
     django.setup()
@@ -121,15 +121,15 @@ def _start_server(host: str, port: int) -> threading.Thread:
 
 
 # ---------------------------------------------------------------------------
-# Window
+# Окно
 # ---------------------------------------------------------------------------
 
 def _open_window(url: str, title: str = "CashMachine · Касса 6ки") -> bool:
-    """Open ``url`` in a native window; return ``False`` if pywebview missing."""
+    """Открыть ``url`` в нативном окне; вернуть ``False``, если pywebview нет."""
     try:
         import webview  # type: ignore
     except ImportError:
-        LOG.warning("pywebview not installed; opening default browser instead.")
+        LOG.warning("pywebview не установлен; открываю системный браузер.")
         return False
 
     webview.create_window(title, url=url, width=1280, height=800, min_size=(1024, 640))
@@ -138,22 +138,25 @@ def _open_window(url: str, title: str = "CashMachine · Касса 6ки") -> bo
 
 
 def main() -> int:
-    """Entry point used by both the Python script and PyInstaller bundle."""
+    """Точка входа: используется и обычным скриптом, и PyInstaller-сборкой."""
     host = "127.0.0.1"
     port = _pick_port()
     url = f"http://{host}:{port}/"
 
-    LOG.info("Starting CashMachine on %s", url)
-    print(f"CashMachine starting on {url}", flush=True)
+    LOG.info("Запуск CashMachine на %s", url)
+    print(f"CashMachine стартует на {url}", flush=True)
 
     _start_server(host, port)
     if not _wait_for_server(url + "accounts/login/"):
-        print("Django server failed to start; see cashmachine.log", file=sys.stderr)
+        print(
+            "Django-сервер не поднялся; подробности в cashmachine.log",
+            file=sys.stderr,
+        )
         return 1
 
     if not _open_window(url):
         webbrowser.open(url)
-        print("Press Ctrl+C to quit.", flush=True)
+        print("Нажмите Ctrl+C для выхода.", flush=True)
         try:
             while True:
                 time.sleep(3600)

@@ -1,7 +1,7 @@
-"""Root URL configuration.
+"""Корневая конфигурация URL-адресов.
 
-Each Django app owns its own :mod:`urls` module which is included here under a
-namespace matching the app label.
+У каждого Django-приложения есть свой модуль :mod:`urls`, который
+подключается здесь с пространством имён, совпадающим с меткой приложения.
 """
 
 from django.contrib import admin

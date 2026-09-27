@@ -1,4 +1,4 @@
-"""Tests for the analytics service layer."""
+"""Тесты сервисного слоя приложения analytics."""
 
 from decimal import Decimal
 

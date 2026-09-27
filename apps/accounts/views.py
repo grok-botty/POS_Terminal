@@ -6,7 +6,7 @@ from .forms import LoginForm
 
 
 def login_view(request: HttpRequest) -> HttpResponse:
-    """Render the login form and authenticate the user on POST."""
+    """Отрисовать форму входа и авторизовать пользователя на POST-запросе."""
     if request.user.is_authenticated:
         return redirect("pos:register")
 
@@ -18,6 +18,6 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
 
 def logout_view(request: HttpRequest) -> HttpResponse:
-    """Log the current user out and redirect to the login page."""
+    """Выйти из текущей сессии и вернуться на страницу входа."""
     logout(request)
     return redirect("accounts:login")
