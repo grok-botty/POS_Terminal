@@ -1,0 +1,46 @@
+<div class="modal-backdrop" x-data @click.self="$el.remove()">
+  <form
+    class="modal picker"
+    method="post"
+    hx-post="{% url 'pos:add_line' product.id %}"
+    hx-target="#order-panel"
+    hx-swap="outerHTML"
+    hx-on::after-request="document.getElementById('picker-target').innerHTML=''"
+  >
+    {% csrf_token %}
+    <header class="modal-header">
+      <h2>{{ product.name }} · {{ product.price }} ₽</h2>
+      <button type="button" class="btn btn-ghost" @click="$root.remove()">×</button>
+    </header>
+    <div class="modal-body">
+      {% for group in groups %}
+        <fieldset class="mod-group">
+          <legend>
+            {{ group.name }}
+            {% if group.selection_mode == 'single' %}<small>· один вариант</small>{% else %}<small>· любые</small>{% endif %}
+          </legend>
+          <div class="mod-options">
+            {% for opt in group.options.all %}
+              {% if opt.is_active %}
+                <label class="chip">
+                  <input
+                    type="{% if group.selection_mode == 'single' %}radio{% else %}checkbox{% endif %}"
+                    name="modifiers"
+                    value="{{ opt.id }}"
+                    {% if group.selection_mode == 'single' %}data-radio-group="g{{ group.id }}"{% endif %}
+                  />
+                  <span>{{ opt.name }}</span>
+                  {% if opt.price_delta %}<small>{% if opt.price_delta > 0 %}+{% endif %}{{ opt.price_delta }} ₽</small>{% endif %}
+                </label>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </fieldset>
+      {% endfor %}
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="btn btn-ghost" @click="$root.remove()">Отмена</button>
+      <button type="submit" class="btn btn-primary">Добавить в заказ</button>
+    </footer>
+  </form>
+</div>

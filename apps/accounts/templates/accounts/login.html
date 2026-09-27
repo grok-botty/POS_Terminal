@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block chrome %}
+  <header class="topbar topbar-empty">
+    <a class="brand" href="/">CashMachine · <span>6ка</span></a>
+  </header>
+{% endblock %}
+
+{% block content %}
+<section class="login-card">
+  <h1>Вход в кассу</h1>
+  <p class="muted">Логин по умолчанию: <code>admin/admin</code> или <code>cashier/cashier</code>.</p>
+  <form method="post" class="stack">
+    {% csrf_token %}
+    {% for field in form %}
+      <label>
+        <span>{{ field.label }}</span>
+        {{ field }}
+        {% if field.errors %}<small class="error">{{ field.errors|join:", " }}</small>{% endif %}
+      </label>
+    {% endfor %}
+    {% if form.non_field_errors %}
+      <div class="error">{{ form.non_field_errors|join:", " }}</div>
+    {% endif %}
+    <button type="submit" class="btn btn-primary btn-lg">Войти</button>
+  </form>
+</section>
+{% endblock %}

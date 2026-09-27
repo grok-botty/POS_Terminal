@@ -1,0 +1,75 @@
+{% load pos_extras %}
+<div id="queue"
+     class="queue"
+     hx-get="{% url 'orders:queue_fragment' %}"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML">
+  <section class="queue-column">
+    <h2>Активные</h2>
+    <ul class="order-cards">
+      {% for order in active_orders %}
+        <li class="order-card order-card-{{ order.status }} order-card-{{ order.fulfilment }}">
+          <header>
+            <span class="order-code">№{{ order.short_code }}</span>
+            <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
+            <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
+          </header>
+          <ul class="card-lines">
+            {% for line in order.lines.all %}
+              <li>
+                <span>{{ line.quantity }} × {{ line.name_snapshot }}</span>
+                {% if line.modifiers.all %}
+                  <small>{% for m in line.modifiers.all %}{{ m.name_snapshot }}{% if not forloop.last %}, {% endif %}{% endfor %}</small>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+          {% if order.comment %}<p class="order-comment">✎ {{ order.comment }}</p>{% endif %}
+          <footer>
+            <span class="tag tag-{{ order.fulfilment }}">
+              {{ order.get_fulfilment_display }}
+            </span>
+            <div class="card-actions">
+              {% if order.status == 'in_progress' %}
+                <form hx-post="{% url 'orders:ready' order.id %}" hx-target="#queue" hx-swap="outerHTML">
+                  {% csrf_token %}
+                  <button class="btn btn-primary">Готов</button>
+                </form>
+              {% else %}
+                <form hx-post="{% url 'orders:handoff' order.id %}" hx-target="#queue" hx-swap="outerHTML">
+                  {% csrf_token %}
+                  <button class="btn btn-primary">Отдан</button>
+                </form>
+              {% endif %}
+              <form hx-post="{% url 'orders:cancel' order.id %}" hx-target="#queue" hx-swap="outerHTML"
+                    hx-confirm="Отменить заказ?">
+                {% csrf_token %}
+                <button class="btn btn-ghost">Отмена</button>
+              </form>
+            </div>
+          </footer>
+        </li>
+      {% empty %}
+        <li class="empty">Активных заказов нет.</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="queue-column">
+    <h2>Недавние выдачи</h2>
+    <ul class="order-cards handoff">
+      {% for order in recent_handoffs %}
+        <li class="order-card order-card-handed_off">
+          <header>
+            <span class="order-code">№{{ order.short_code }}</span>
+            <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
+            <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
+          </header>
+          <p class="muted">{{ order.handed_off_at|time:"H:i" }}</p>
+        </li>
+      {% empty %}
+        <li class="empty">Пока пусто.</li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
