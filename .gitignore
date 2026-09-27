@@ -1,0 +1,6 @@
+.venv
+*cache*
+/backend/*/config.py
+build/
+dist/
+backend/dist

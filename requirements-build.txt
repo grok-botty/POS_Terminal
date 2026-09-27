@@ -1,0 +1,6 @@
+Django==4.2.9
+django-cors-headers==4.3.1
+PyJWT==2.8.0
+
+# Для сборки
+pyinstaller==6.18.0

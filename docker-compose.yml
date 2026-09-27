@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: cashmachine
+    restart: unless-stopped
+    ports:
+      - "80:8080"
+    volumes:
+      - app_data:/data
+    environment:
+      - DOCKER_ENV=1
+      - HOST=0.0.0.0
+      - PORT=8080
+
+volumes:
+  app_data:
+    driver: local
