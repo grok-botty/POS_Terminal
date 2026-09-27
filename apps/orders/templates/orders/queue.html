@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Выдача · {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="queue-page">
+  <header class="queue-toolbar">
+    <h1>Выдача</h1>
+    <form hx-post="{% url 'orders:all_ready' %}" hx-target="#queue" hx-swap="outerHTML">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Все готовы</button>
+    </form>
+  </header>
+  {% include "orders/_queue.html" %}
+</section>
+{% endblock %}

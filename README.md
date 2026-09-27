@@ -1,75 +1,98 @@
-# CashMachine
+# CashMachine — касса кофейни «6ка»
 
-POS-терминал для кофейни МФТИ 6ка
+POS-терминал МФТИ-кофейни «6ка». Полностью на Django, работает поверх
+SQLite, упаковывается в один `.exe` для Windows. UI — Django-шаблоны +
+HTMX (никакой SPA).
 
-## Что это
-
-Касса с интерфейсом в браузере. Работает локально, данные хранятся в SQLite.
-
-Основное:
-- Заказы с оплатой и комментариями
-- Редактируемое меню с категориями
-- Закрытие дня с сохранением в БД
-- Аналитика продаж
-
-## Запуск
-
-Скачайте готовый билд из релизов и запустите:
-
-**macOS/Linux:**
-```bash
-./CashMachine
-```
-
-**Windows:**
-```
-CashMachine.exe
-```
-
-Откроется браузер на `http://localhost:8000`
-
-## Сборка из исходников
-
-Нужны Python 3.10+ и Node.js 18+
+## Быстрый старт (dev)
 
 ```bash
-# Установить зависимости
-pip install -r requirements-build.txt
-cd frontend && npm install && cd ..
-
-# Собрать
-./build.sh          # macOS/Linux
-build.bat           # Windows
+git clone https://github.com/LotFullKa/POS_Terminal cashmachine
+cd cashmachine
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+python manage.py bootstrap          # migrate + demo меню + admin/admin
+python manage.py runserver 0.0.0.0:8000
 ```
 
-Результат в `dist/CashMachine`
+Открыть <http://127.0.0.1:8000/>. Логины по умолчанию:
 
+| Логин   | Пароль  | Роль            |
+|---------|---------|-----------------|
+| admin   | admin   | Администратор   |
+| cashier | cashier | Кассир          |
 
-## Разработка
+Смените их перед выкладкой в реальную кассу (или через админку `/admin/`).
 
-Быстрый запуск для тестов:
+## Быстрый старт (Windows desktop)
+
+```bat
+git clone https://github.com/LotFullKa/POS_Terminal
+cd POS_Terminal
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-desktop.txt
+desktop\build.bat
+```
+
+Готовый бинарник — `dist\CashMachine.exe`. Он поднимает Django на свободном
+loopback-порту и открывает окно pywebview. Данные хранятся в
+`%LOCALAPPDATA%\CashMachine\cashmachine.sqlite3`, лог — в
+`%LOCALAPPDATA%\CashMachine\cashmachine.log`.
+
+Подробности сборки — в [`docs/source/windows.rst`](docs/source/windows.rst).
+
+## Документация
 
 ```bash
-cd frontend
-npm run build
-cd ..
-cp -r frontend/dist backend/app/dist
-python backend/launcher.py
+cd docs
+make html          # macOS/Linux
+make.bat html      # Windows
 ```
 
-## База данных
+Открыть `docs/build/html/index.html`.
 
-SQLite создаётся автоматически:
-- **macOS**: `~/Library/Application Support/MyPOS/pos.sqlite`
-- **Linux**: `~/.local/share/MyPOS/pos.sqlite`
-- **Windows**: `%LOCALAPPDATA%\MyPOS\pos.sqlite`
+Разделы: обзор, архитектура, установка/запуск, модель данных, HTTP-контракт
+и URL-карта, Windows-сборка, правила контрибьюции, автосправочник по всем
+модулям.
+
+## Что умеет
+
+- Заказы: товары + модификаторы (сироп / молоко), имя гостя, комментарий,
+  «В зале / С собой», оплата.
+- Экран выдачи: активные и недавние заказы с HTMX-polling, кнопка
+  «Все готовы», отдача одним кликом.
+- Меню: CRUD категорий, товаров, групп модификаторов и опций (менеджер).
+- Аналитика: выручка по дням, топ товаров, загрузка по часам, история
+  закрытых смен.
+- Закрытие смены: один клик → снапшот в `DailySummary`.
+- Django-админка на `/admin/`.
+
+## Структура
+
+```
+cashmachine/
+├── config/                # Django-проект (settings, urls, wsgi/asgi)
+├── apps/
+│   ├── accounts/          # Пользователи (кастомная модель + роли)
+│   ├── catalog/           # Категории, товары, модификаторы
+│   ├── orders/            # Заказы и позиции
+│   ├── analytics/         # Дневные сводки + дашборд
+│   └── pos/               # HTMX-экран кассы + первичный bootstrap
+├── templates/             # base.html + partials
+├── static/                # css + вендорный htmx.min.js, alpine.min.js
+├── desktop/               # launcher.py, PyInstaller spec, build.bat / .sh
+├── docs/                  # Sphinx (RU) + autodoc
+└── manage.py
+```
 
 ## Стек
 
-Frontend: React + TypeScript + MUI + Zustand
-Backend: Django + SQLite
-Сборка: PyInstaller + Vite
+- Django 5.x, SQLite, django-htmx, WhiteNoise.
+- HTMX 1.9 + Alpine.js 3.14 (оба вендорены, без npm).
+- pywebview + PyInstaller для настольной сборки.
+- Sphinx + Furo для документации.
 
 ## Лицензия
 
-MIT
+MIT — см. `LICENSE` (если добавите).

@@ -1,0 +1,105 @@
+{% load pos_extras %}
+<div id="order-panel" class="order-panel" x-data="{ selectedLine: null }">
+  <header class="order-header">
+    <div>
+      <h2>Заказ №{{ order.short_code }}</h2>
+      <p class="muted">
+        Сегодня: {{ totals_today.orders }} заказов · {{ totals_today.revenue }} ₽
+      </p>
+    </div>
+    <form
+      hx-post="{% url 'pos:order_discard' %}"
+      hx-swap="none"
+      hx-confirm="Отменить текущий черновик?"
+    >
+      {% csrf_token %}
+      <button type="submit" class="btn btn-ghost" title="Начать заново">Сброс</button>
+    </form>
+  </header>
+
+  <form
+    class="order-meta stack"
+    hx-post="{% url 'pos:order_meta' %}"
+    hx-trigger="input changed delay:400ms from:input, input changed delay:400ms from:textarea, change from:select"
+    hx-target="#order-panel"
+    hx-swap="outerHTML"
+  >
+    {% csrf_token %}
+    <label>
+      <span>Имя гостя</span>
+      <input type="text" name="guest_name" value="{{ order.guest_name }}" placeholder="Например, Артём" />
+    </label>
+    <label>
+      <span>Комментарий</span>
+      <textarea name="comment" rows="2" placeholder="Без сахара, ложку карамели сверху…">{{ order.comment }}</textarea>
+    </label>
+    <fieldset class="fulfilment">
+      <label class="chip {% if order.fulfilment == 'here' %}active{% endif %}">
+        <input type="radio" name="fulfilment" value="here" {% if order.fulfilment == 'here' %}checked{% endif %} />
+        В зале
+      </label>
+      <label class="chip {% if order.fulfilment == 'to_go' %}active{% endif %}">
+        <input type="radio" name="fulfilment" value="to_go" {% if order.fulfilment == 'to_go' %}checked{% endif %} />
+        С собой
+      </label>
+    </fieldset>
+  </form>
+
+  <ul class="order-lines">
+    {% for line in order.lines.all %}
+      <li
+        class="order-line"
+        :class="{ 'selected': selectedLine === {{ line.id }} }"
+        @click="selectedLine = {{ line.id }}"
+      >
+        <div class="line-main">
+          <span class="line-name">{{ line.name_snapshot }}</span>
+          {% if line.modifiers.all %}
+            <span class="line-mods">
+              {% for m in line.modifiers.all %}{{ m.name_snapshot }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </span>
+          {% endif %}
+        </div>
+        <div class="line-qty">
+          <button type="button"
+                  hx-post="{% url 'pos:line_dec' line.id %}"
+                  hx-target="#order-panel"
+                  hx-swap="outerHTML"
+                  class="qty-btn">−</button>
+          <span class="qty">{{ line.quantity }}</span>
+          <button type="button"
+                  hx-post="{% url 'pos:line_inc' line.id %}"
+                  hx-target="#order-panel"
+                  hx-swap="outerHTML"
+                  class="qty-btn">+</button>
+        </div>
+        <div class="line-price">{{ line|line_subtotal }} ₽</div>
+        <button type="button" class="line-remove"
+                title="Удалить"
+                hx-post="{% url 'pos:line_remove' line.id %}"
+                hx-target="#order-panel"
+                hx-swap="outerHTML">×</button>
+      </li>
+    {% empty %}
+      <li class="empty-order">Выберите товары в меню слева.</li>
+    {% endfor %}
+  </ul>
+
+  <footer class="order-footer">
+    <div class="grand-total">
+      <span>Итого</span>
+      <strong>{{ order.total_amount }} ₽</strong>
+    </div>
+    <form
+      hx-post="{% url 'pos:order_pay' %}"
+      hx-swap="none"
+    >
+      {% csrf_token %}
+      <button type="submit"
+              class="btn btn-primary btn-lg"
+              {% if not order.lines.all %}disabled{% endif %}>
+        Оплачено
+      </button>
+    </form>
+  </footer>
+</div>

@@ -1,0 +1,4 @@
+# Core runtime dependencies for the CashMachine POS.
+Django>=5.0,<5.2
+django-htmx>=1.17
+whitenoise>=6.6

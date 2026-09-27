@@ -1,0 +1,24 @@
+<div id="products" class="products">
+  {% if active_category %}
+    <h2 class="products-title" style="--cat-color: {{ active_category.color }}">
+      {{ active_category.name }}
+    </h2>
+    <div class="product-grid">
+      {% for product in products %}
+        <button
+          class="product-tile"
+          hx-get="{% url 'pos:modifier_picker' product.id %}"
+          hx-target="#picker-target"
+          hx-swap="innerHTML"
+        >
+          <span class="p-name">{{ product.name }}</span>
+          <span class="p-price">{{ product.price }} ₽</span>
+        </button>
+      {% empty %}
+        <p class="muted">В этой категории пока нет товаров.</p>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">Выберите категорию слева.</p>
+  {% endif %}
+</div>

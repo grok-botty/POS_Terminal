@@ -1,0 +1,22 @@
+<header class="topbar">
+  <a class="brand" href="{% url 'pos:register' %}">CashMachine · <span>6ка</span></a>
+  <nav class="nav">
+    <a href="{% url 'pos:register' %}" class="nav-link {% if request.resolver_match.namespace == 'pos' %}active{% endif %}">Касса</a>
+    <a href="{% url 'orders:queue' %}" class="nav-link {% if request.resolver_match.namespace == 'orders' %}active{% endif %}">Выдача</a>
+    {% if is_manager %}
+      <a href="{% url 'catalog:dashboard' %}" class="nav-link {% if request.resolver_match.namespace == 'catalog' %}active{% endif %}">Меню</a>
+      <a href="{% url 'analytics:dashboard' %}" class="nav-link {% if request.resolver_match.namespace == 'analytics' %}active{% endif %}">Аналитика</a>
+      <a href="/admin/" class="nav-link">Админка</a>
+    {% endif %}
+  </nav>
+  <div class="user-menu">
+    {% if user.is_authenticated %}
+      <span class="user-role">{{ user.get_role_display|default:user.username }}</span>
+      <span class="user-name">{{ user.username }}</span>
+      <form action="{% url 'accounts:logout' %}" method="post" class="inline-form">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost">Выйти</button>
+      </form>
+    {% endif %}
+  </div>
+</header>

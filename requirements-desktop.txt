@@ -1,0 +1,4 @@
+# Extras for the Windows/desktop bundle. Install alongside requirements.txt.
+-r requirements.txt
+pywebview>=5.1
+pyinstaller>=6.6

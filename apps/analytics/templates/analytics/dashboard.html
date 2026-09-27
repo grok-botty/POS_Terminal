@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Аналитика · {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="stack">
+  <header class="page-header">
+    <h1>Аналитика продаж</h1>
+    <div class="row-actions">
+      <form method="get" class="inline-form">
+        <label>
+          Период, дней:
+          <select name="days" onchange="this.form.submit()">
+            <option value="7"  {% if days == 7  %}selected{% endif %}>7</option>
+            <option value="14" {% if days == 14 %}selected{% endif %}>14</option>
+            <option value="30" {% if days == 30 %}selected{% endif %}>30</option>
+            <option value="60" {% if days == 60 %}selected{% endif %}>60</option>
+            <option value="90" {% if days == 90 %}selected{% endif %}>90</option>
+          </select>
+        </label>
+      </form>
+      <form method="post" action="{% url 'analytics:close_day' %}" class="inline-form">
+        {% csrf_token %}
+        <button class="btn btn-primary" type="submit">Закрыть день</button>
+      </form>
+    </div>
+  </header>
+
+  <section>
+    <h2>Выручка по дням</h2>
+    <div class="bars">
+      {% for row in series %}
+        <div class="bar-row">
+          <span class="bar-label">{{ row.date|date:"d.m" }}</span>
+          <div class="bar-track"><div class="bar-fill" style="width: {{ row.bar_pct }}%"></div></div>
+          <span class="bar-value">{{ row.revenue }} ₽ · {{ row.orders }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Топ товаров</h2>
+    <table class="data">
+      <thead><tr><th>Товар</th><th>Кол-во</th><th>Выручка</th></tr></thead>
+      <tbody>
+        {% for row in top_products %}
+          <tr><td>{{ row.name_snapshot }}</td><td>{{ row.qty }}</td><td>{{ row.revenue }} ₽</td></tr>
+        {% empty %}
+          <tr><td colspan="3" class="muted">Нет продаж.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Загрузка по часам</h2>
+    <div class="hours">
+      {% for h in hourly_load %}
+        <div class="hour">
+          <div class="hour-bar" style="height: {{ h.orders }}px"></div>
+          <span>{{ h.hour }}:00</span>
+          <small>{{ h.orders }}</small>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Закрытые смены</h2>
+    <table class="data">
+      <thead><tr><th>Дата</th><th>Заказов</th><th>Оплачено</th><th>Выручка</th><th>Средний чек</th><th>Кассир</th></tr></thead>
+      <tbody>
+        {% for s in summaries %}
+          <tr>
+            <td>{{ s.date }}</td>
+            <td>{{ s.total_orders }}</td>
+            <td>{{ s.paid_orders }}</td>
+            <td>{{ s.total_revenue }} ₽</td>
+            <td>{{ s.avg_check }} ₽</td>
+            <td>{{ s.closed_by|default:"—" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">Ещё не было закрытий.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</section>
+{% endblock %}

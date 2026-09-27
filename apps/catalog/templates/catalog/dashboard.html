@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Меню · {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="stack">
+  <header class="page-header">
+    <h1>Управление меню</h1>
+    <div class="header-actions">
+      <a class="btn btn-primary" href="{% url 'catalog:product_create' %}">+ Товар</a>
+      <a class="btn" href="{% url 'catalog:category_create' %}">+ Категория</a>
+      <a class="btn" href="{% url 'catalog:mgroup_create' %}">+ Группа модификаторов</a>
+    </div>
+  </header>
+
+  <div class="cards">
+    {% for cat in categories %}
+      <article class="card">
+        <header class="card-head" style="--cat-color: {{ cat.color }}">
+          <h2>{{ cat.name }}</h2>
+          <div class="card-actions">
+            <a class="btn btn-ghost" href="{% url 'catalog:category_edit' cat.id %}">Изменить</a>
+            <a class="btn btn-ghost" href="{% url 'catalog:category_delete' cat.id %}">Удалить</a>
+          </div>
+        </header>
+        <ul class="prod-list">
+          {% for prod in cat.products.all %}
+            <li>
+              <span>{{ prod.name }} — {{ prod.price }} ₽{% if not prod.is_active %} · <em>скрыт</em>{% endif %}</span>
+              <span class="row-actions">
+                <a href="{% url 'catalog:product_edit' prod.id %}">✎</a>
+                <a href="{% url 'catalog:product_delete' prod.id %}">×</a>
+              </span>
+            </li>
+          {% empty %}
+            <li class="muted">Нет товаров.</li>
+          {% endfor %}
+        </ul>
+      </article>
+    {% endfor %}
+  </div>
+
+  <section class="stack">
+    <h2>Группы модификаторов</h2>
+    <div class="cards">
+      {% for group in modifier_groups %}
+        <article class="card">
+          <header class="card-head">
+            <h3>{{ group.name }} <small>· {{ group.get_selection_mode_display }}{% if group.is_required %} · обязательна{% endif %}</small></h3>
+            <div class="card-actions">
+              <a class="btn btn-ghost" href="{% url 'catalog:mgroup_edit' group.id %}">Изменить</a>
+              <a class="btn btn-ghost" href="{% url 'catalog:mgroup_delete' group.id %}">Удалить</a>
+              <a class="btn btn-ghost" href="{% url 'catalog:modifier_create' %}?group={{ group.id }}">+ Опция</a>
+            </div>
+          </header>
+          <ul class="prod-list">
+            {% for opt in group.options.all %}
+              <li>
+                <span>{{ opt.name }} {% if opt.price_delta %}<em>{% if opt.price_delta > 0 %}+{% endif %}{{ opt.price_delta }} ₽</em>{% endif %}{% if not opt.is_active %} · <em>скрыт</em>{% endif %}</span>
+                <span class="row-actions">
+                  <a href="{% url 'catalog:modifier_edit' opt.id %}">✎</a>
+                  <a href="{% url 'catalog:modifier_delete' opt.id %}">×</a>
+                </span>
+              </li>
+            {% empty %}
+              <li class="muted">Нет опций.</li>
+            {% endfor %}
+          </ul>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+{% endblock %}
