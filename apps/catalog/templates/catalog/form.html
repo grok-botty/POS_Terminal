@@ -4,20 +4,43 @@
 
 {% block content %}
 <section class="stack narrow">
-  <h1>{{ title }}</h1>
-  <form method="post" class="stack">
+  <header class="page-header">
+    <div>
+      <h1>{{ title }}</h1>
+      {% if subtitle %}<p class="muted" style="margin: 2px 0 0;">{{ subtitle }}</p>{% endif %}
+    </div>
+    <a class="btn btn-ghost" href="{% url 'catalog:dashboard' %}">← К меню</a>
+  </header>
+
+  <form method="post" class="form-card">
     {% csrf_token %}
-    {% for field in form %}
-      <label>
-        <span>{{ field.label }}</span>
-        {{ field }}
-        {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
-        {% if field.errors %}<small class="error">{{ field.errors|join:", " }}</small>{% endif %}
-      </label>
-    {% endfor %}
-    <div class="row-actions">
-      <button type="submit" class="btn btn-primary">Сохранить</button>
-      <a class="btn btn-ghost" href="{% url 'catalog:dashboard' %}">Отмена</a>
+    <div class="stack">
+      {% if form.non_field_errors %}
+        <div class="flash-error" style="padding: 10px 12px; border-radius: 8px;">
+          {{ form.non_field_errors|join:"; " }}
+        </div>
+      {% endif %}
+      {% for field in form %}
+        {% if field.field.widget.input_type == 'checkbox' and not field.field.widget.allow_multiple_selected %}
+          <label style="flex-direction: row; align-items: center; gap: 8px;">
+            {{ field }}
+            <span>{{ field.label }}</span>
+            {% if field.help_text %}<small class="muted">— {{ field.help_text }}</small>{% endif %}
+            {% if field.errors %}<small class="error">{{ field.errors|join:", " }}</small>{% endif %}
+          </label>
+        {% else %}
+          <label>
+            <span>{{ field.label }}</span>
+            {{ field }}
+            {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
+            {% if field.errors %}<small class="error">{{ field.errors|join:", " }}</small>{% endif %}
+          </label>
+        {% endif %}
+      {% endfor %}
+      <div class="row-actions">
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+        <a class="btn btn-ghost" href="{% url 'catalog:dashboard' %}">Отмена</a>
+      </div>
     </div>
   </form>
 </section>
