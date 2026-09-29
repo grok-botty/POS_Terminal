@@ -1,0 +1,131 @@
+{# Обновляемый HTMX-фрагмент дашборда меню (переключение доступности и т.п.). #}
+<div id="catalog-dashboard" class="stack">
+  <section class="stack">
+    <div class="section-title">
+      <h2>Категории и товары</h2>
+    </div>
+    <div class="cards">
+      {% for cat in categories %}
+        <article class="card {% if not cat.is_active %}inactive{% endif %}">
+          <header class="card-head" style="--cat-color: {{ cat.color }}">
+            <div>
+              <h2>{{ cat.name }}</h2>
+              <div class="card-head-sub">
+                {{ cat.products.count }} шт. · порядок {{ cat.order }}
+              </div>
+            </div>
+            <div class="card-actions">
+              <button type="button"
+                      class="switch-btn {% if not cat.is_active %}off{% endif %}"
+                      title="Скрыть/показать категорию на кассе"
+                      hx-post="{% url 'catalog:category_toggle' cat.id %}"
+                      hx-target="#catalog-dashboard"
+                      hx-swap="outerHTML">
+                {% if cat.is_active %}Активна{% else %}Скрыта{% endif %}
+              </button>
+              <a class="icon-btn" href="{% url 'catalog:category_edit' cat.id %}" title="Изменить">✎</a>
+              <a class="icon-btn danger" href="{% url 'catalog:category_delete' cat.id %}" title="Удалить">×</a>
+            </div>
+          </header>
+          <ul class="prod-list">
+            {% for prod in cat.products.all %}
+              <li class="{% if not prod.is_active %}inactive{% endif %}">
+                <div class="prod-name">
+                  {{ prod.name }}
+                  {% if prod.modifier_groups.all %}
+                    <em>· {% for g in prod.modifier_groups.all %}{{ g.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</em>
+                  {% endif %}
+                </div>
+                <div class="prod-price">{{ prod.price }} ₽</div>
+                <div class="row-actions">
+                  <button type="button"
+                          class="switch-btn {% if not prod.is_active %}off{% endif %}"
+                          hx-post="{% url 'catalog:product_toggle' prod.id %}"
+                          hx-target="#catalog-dashboard"
+                          hx-swap="outerHTML"
+                          title="Показать/скрыть товар на кассе">
+                    {% if prod.is_active %}В меню{% else %}Скрыт{% endif %}
+                  </button>
+                  <a class="icon-btn" href="{% url 'catalog:product_edit' prod.id %}" title="Изменить">✎</a>
+                  <a class="icon-btn danger" href="{% url 'catalog:product_delete' prod.id %}" title="Удалить">×</a>
+                </div>
+              </li>
+            {% empty %}
+              <li class="empty">В категории ещё нет товаров.</li>
+            {% endfor %}
+          </ul>
+          <div class="card-foot">
+            <a class="btn btn-ghost"
+               href="{% url 'catalog:product_create' %}?category={{ cat.id }}">+ Товар в категорию</a>
+          </div>
+        </article>
+      {% empty %}
+        <article class="card">
+          <div class="empty" style="padding: 24px;">
+            Пока ни одной категории.
+            <a href="{% url 'catalog:category_create' %}">Создайте первую</a>.
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="stack">
+    <div class="section-title">
+      <h2>Группы модификаторов</h2>
+      <a class="btn btn-ghost" href="{% url 'catalog:mgroup_create' %}">+ Новая группа</a>
+    </div>
+    <div class="cards">
+      {% for group in modifier_groups %}
+        <article class="card">
+          <header class="card-head">
+            <div>
+              <h3>{{ group.name }}</h3>
+              <div class="card-head-sub">
+                {{ group.get_selection_mode_display }}
+                {% if group.is_required %} · обязательна{% endif %}
+              </div>
+            </div>
+            <div class="card-actions">
+              <a class="icon-btn" href="{% url 'catalog:mgroup_edit' group.id %}" title="Изменить">✎</a>
+              <a class="icon-btn danger" href="{% url 'catalog:mgroup_delete' group.id %}" title="Удалить">×</a>
+            </div>
+          </header>
+          <ul class="prod-list">
+            {% for opt in group.options.all %}
+              <li class="{% if not opt.is_active %}inactive{% endif %}">
+                <div class="prod-name">{{ opt.name }}</div>
+                <div class="prod-price">
+                  {% if opt.price_delta %}{% if opt.price_delta > 0 %}+{% endif %}{{ opt.price_delta }} ₽{% else %}·{% endif %}
+                </div>
+                <div class="row-actions">
+                  <button type="button"
+                          class="switch-btn {% if not opt.is_active %}off{% endif %}"
+                          hx-post="{% url 'catalog:modifier_toggle' opt.id %}"
+                          hx-target="#catalog-dashboard"
+                          hx-swap="outerHTML">
+                    {% if opt.is_active %}Активна{% else %}Скрыта{% endif %}
+                  </button>
+                  <a class="icon-btn" href="{% url 'catalog:modifier_edit' opt.id %}" title="Изменить">✎</a>
+                  <a class="icon-btn danger" href="{% url 'catalog:modifier_delete' opt.id %}" title="Удалить">×</a>
+                </div>
+              </li>
+            {% empty %}
+              <li class="empty">В группе ещё нет опций.</li>
+            {% endfor %}
+          </ul>
+          <div class="card-foot">
+            <a class="btn btn-ghost"
+               href="{% url 'catalog:modifier_create' %}?group={{ group.id }}">+ Опция в группу</a>
+          </div>
+        </article>
+      {% empty %}
+        <article class="card">
+          <div class="empty" style="padding: 24px;">
+            Пока ни одной группы модификаторов.
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</div>

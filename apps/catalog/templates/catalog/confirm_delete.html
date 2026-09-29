@@ -4,12 +4,18 @@
 
 {% block content %}
 <section class="stack narrow">
-  <h1>Удалить {{ kind }}?</h1>
-  <p>«{{ object }}»</p>
-  <form method="post" class="row-actions">
-    {% csrf_token %}
-    <button class="btn btn-primary" type="submit">Да, удалить</button>
-    <a class="btn btn-ghost" href="{% url 'catalog:dashboard' %}">Отмена</a>
-  </form>
+  <header class="page-header">
+    <h1>Удалить {{ kind }}?</h1>
+    <a class="btn btn-ghost" href="{% url 'catalog:dashboard' %}">← Отмена</a>
+  </header>
+  <div class="form-card">
+    <p style="margin: 0 0 12px;">«{{ object }}» — удаление необратимо.</p>
+    <form method="post" class="row-actions">
+      {% csrf_token %}
+      <button class="btn btn-primary" type="submit"
+              style="background: var(--danger);">Да, удалить</button>
+      <a class="btn btn-ghost" href="{% url 'catalog:dashboard' %}">Отмена</a>
+    </form>
+  </div>
 </section>
 {% endblock %}
