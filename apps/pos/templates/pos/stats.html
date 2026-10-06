@@ -47,6 +47,36 @@
     </article>
   </section>
 
+  <section class="panel revenue-panel">
+    <header class="panel-head">
+      <h2>Выручка по датам</h2>
+      <span>сумма оплаченных · дата смены</span>
+    </header>
+    {% if chart %}
+      <svg class="revenue-chart" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="Выручка по датам смен">
+        <line class="axis" x1="{{ chart.left }}" y1="{{ chart.top }}" x2="{{ chart.left }}" y2="{{ chart.baseline }}"></line>
+        <line class="axis" x1="{{ chart.left }}" y1="{{ chart.baseline }}" x2="{{ chart.width }}" y2="{{ chart.baseline }}"></line>
+        <text class="tick" x="{{ chart.left }}" y="{{ chart.top }}" dx="-8" text-anchor="end">{{ chart.y_max|rub }}</text>
+        {% if chart.y_max %}
+          <text class="tick" x="{{ chart.left }}" y="{{ chart.mid }}" dy="4" dx="-8" text-anchor="end">{{ chart.y_mid|rub }}</text>
+        {% endif %}
+        <text class="tick" x="{{ chart.left }}" y="{{ chart.baseline }}" dy="4" dx="-8" text-anchor="end">0 ₽</text>
+        {% for point in chart.points %}
+          <g>
+            <rect x="{{ point.x }}" y="{{ point.y }}" width="{{ point.w }}" height="{{ point.h }}" rx="3">
+              <title>{{ point.label }} · {{ point.revenue|rub }}</title>
+            </rect>
+            {% if point.show_label %}
+              <text class="tick day" x="{{ point.cx }}" y="{{ chart.baseline }}" dy="18" text-anchor="middle">{{ point.label }}</text>
+            {% endif %}
+          </g>
+        {% endfor %}
+      </svg>
+    {% else %}
+      <p class="muted stats-empty">За эту выборку смен нет.</p>
+    {% endif %}
+  </section>
+
   <div class="stats-grid">
     <section class="panel">
       <header class="panel-head">

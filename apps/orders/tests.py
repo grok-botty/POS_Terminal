@@ -184,6 +184,18 @@ class OrderServicesTests(TestCase):
         self.assertEqual([s.id for s in ranged["shifts"]], [early.id])
         self.assertEqual(ranged["revenue"], Decimal("400.00"))
         self.assertEqual(ranged["issued"], 1)
+        self.assertEqual(
+            [(row["date"], row["revenue"]) for row in ranged["by_date"]],
+            [(date(2026, 10, 1), Decimal("400.00"))],
+        )
+        both = services.aggregate_shift_stats([early, late])
+        self.assertEqual(
+            [(row["date"], row["revenue"]) for row in both["by_date"]],
+            [
+                (date(2026, 10, 1), Decimal("400.00")),
+                (date(2026, 10, 5), Decimal("200.00")),
+            ],
+        )
 
     def test_all_ready_bulk_action(self) -> None:
         for _ in range(3):

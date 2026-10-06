@@ -140,6 +140,8 @@ def aggregate_shift_stats(shifts: Iterable[Shift]) -> dict:
       внутри ``total_amount``.
     * «Средний чек» — выручка / выдано, ноль если выдавать было нечего.
     * «Отменено» в выручку не входит.
+    * ``by_date`` — та же выручка по :attr:`Shift.business_date`, по возрастанию.
+      Дни выбранных смен без оплаченных заказов остаются нулём.
     """
     shift_list = [s for s in shifts if s is not None]
     ids = [s.id for s in shift_list]
@@ -153,6 +155,7 @@ def aggregate_shift_stats(shifts: Iterable[Shift]) -> dict:
         "items": [],
         "categories": [],
         "addons": [],
+        "by_date": [],
     }
     if not ids:
         return empty
@@ -234,6 +237,18 @@ def aggregate_shift_stats(shifts: Iterable[Shift]) -> dict:
     ]
     addons.sort(key=lambda row: row["qty"], reverse=True)
 
+    totals_by_date = {shift.business_date: Decimal("0.00") for shift in shift_list}
+    grouped = paid.values("shift__business_date").annotate(total=Sum("total_amount"))
+    for row in grouped:
+        day = row["shift__business_date"]
+        totals_by_date[day] = totals_by_date.get(day, Decimal("0.00")) + (
+            row["total"] or Decimal("0.00")
+        )
+    by_date = [
+        {"date": day, "revenue": totals_by_date[day]}
+        for day in sorted(totals_by_date)
+    ]
+
     return {
         "shifts": shift_list,
         "issued": issued,
@@ -244,6 +259,7 @@ def aggregate_shift_stats(shifts: Iterable[Shift]) -> dict:
         "items": items[:8],
         "categories": categories,
         "addons": addons[:8],
+        "by_date": by_date,
     }
 
 

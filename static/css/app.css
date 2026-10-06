@@ -1293,10 +1293,22 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .shift-wrap {
   min-height: calc(100vh - 48px);
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
   padding: 72px 16px 40px;
 }
+.shift-credit {
+  margin: 18px 0 0;
+  color: #a0a7b8;
+  font-size: 13px;
+  text-align: center;
+}
+.shift-credit a {
+  color: #7d8798;
+  text-decoration: none;
+}
+.shift-credit a:hover { text-decoration: underline; }
 .shift-card {
   width: min(440px, 100%);
   background: #fff;
@@ -1516,6 +1528,12 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 }
 .addon-list b { font-weight: 700; }
 .stats-empty { margin: 12px 0 4px; }
+.revenue-panel { margin-bottom: 12px; }
+.revenue-chart { display: block; width: 100%; height: auto; margin-top: 8px; }
+.revenue-chart .axis { stroke: #dbe0eb; stroke-width: 1; }
+.revenue-chart rect { fill: #2e78d9; }
+.revenue-chart .tick { fill: #8b93a7; font-size: 12px; font-family: inherit; }
+.revenue-chart .day { fill: #5c6578; }
 .csv-row { display: flex; align-items: center; gap: 12px; margin: 14px 0 0; flex-wrap: wrap; }
 .csv-row .btn { background: #fff; }
 @media (max-width: 980px) {

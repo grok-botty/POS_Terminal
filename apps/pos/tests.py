@@ -386,6 +386,9 @@ class ShiftScreenTests(TestCase):
 
     def test_open_shift_stores_the_typed_cashier_name(self):
         page = self.client.get(reverse("pos:shift"))
+        self.assertContains(page, "автор проги")
+        self.assertContains(page, "https://github.com/LotFullKa")
+        self.assertContains(page, "@LotFullKa")
         self.assertContains(page, 'name="cashier_name"')
         self.assertContains(page, 'value="cashier"')
         response = self.client.post(
@@ -500,6 +503,13 @@ class StatsByShiftDateTests(TestCase):
         self.assertEqual(response.context["stats"]["issued"], 1)
         self.assertEqual(response.context["stats"]["cancelled"], 1)
         self.assertEqual(response.context["stats"]["revenue"], Decimal("150.00"))
+        points = response.context["chart"]["points"]
+        self.assertEqual(
+            [(point["label"], point["revenue"]) for point in points],
+            [("5 окт", Decimal("150.00"))],
+        )
+        self.assertContains(response, 'class="revenue-chart"')
+        self.assertContains(response, "5 окт")
 
     def test_date_range_uses_shift_business_date(self):
         url = reverse("pos:stats") + "?from=2026-10-01&to=2026-10-01"
@@ -510,6 +520,16 @@ class StatsByShiftDateTests(TestCase):
         self.assertEqual(response.context["stats"]["revenue"], Decimal("400.00"))
         self.assertEqual(response.context["stats"]["issued"], 1)
         self.assertEqual(response.context["stats"]["cancelled"], 0)
+        self.assertEqual(
+            [(point["label"], point["revenue"]) for point in response.context["chart"]["points"]],
+            [("1 окт", Decimal("400.00"))],
+        )
+
+        everything = self.client.get(reverse("pos:stats") + "?period=all")
+        self.assertEqual(
+            [(point["label"], point["revenue"]) for point in everything.context["chart"]["points"]],
+            [("1 окт", Decimal("400.00")), ("5 окт", Decimal("150.00"))],
+        )
 
         exported = self.client.get(reverse("pos:stats_csv") + "?from=2026-10-01&to=2026-10-01")
         body = exported.content.decode("utf-8-sig")

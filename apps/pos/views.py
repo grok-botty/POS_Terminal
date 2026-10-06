@@ -680,6 +680,57 @@ def _order_panel_error(request: HttpRequest, order: Order, message: str) -> Http
     )
 
 
+_CHART_MONTHS = (
+    "янв", "фев", "мар", "апр", "май", "июн",
+    "июл", "авг", "сен", "окт", "ноя", "дек",
+)
+
+
+def _revenue_chart(by_date: list[dict]) -> dict | None:
+    """Геометрия SVG: дата смены по X, выручка по Y. Часов нет."""
+    if not by_date:
+        return None
+    width, height = 640, 220
+    left, right, top, bottom = 72, 16, 16, 36
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    baseline = top + plot_h
+    amounts = [row["revenue"] for row in by_date]
+    peak = max(amounts)
+    count = len(by_date)
+    slot = plot_w / count
+    bar_w = min(28, slot * 0.62)
+    stride = 1 if count <= 14 else max(1, (count + 7) // 8)
+    points = []
+    for index, row in enumerate(by_date):
+        revenue = row["revenue"]
+        bar_h = float(revenue / peak) * plot_h if peak > 0 else 0.0
+        center = left + slot * index + slot / 2
+        day = row["date"]
+        label = f"{day.day} {_CHART_MONTHS[day.month - 1]}"
+        points.append({
+            "x": round(center - bar_w / 2, 1),
+            "y": round(baseline - bar_h, 1),
+            "w": round(bar_w, 1),
+            "h": round(bar_h, 1),
+            "cx": round(center, 1),
+            "label": label,
+            "show_label": index % stride == 0 or index == count - 1,
+            "revenue": revenue,
+        })
+    return {
+        "width": width,
+        "height": height,
+        "left": left,
+        "baseline": baseline,
+        "top": top,
+        "mid": round(top + plot_h / 2, 1),
+        "y_max": peak,
+        "y_mid": peak / 2,
+        "points": points,
+    }
+
+
 def _stats_selection(request: HttpRequest):
     """Период статистики. Диапазон дат важнее готовых отрезков."""
     date_from = _parse_iso_date(request.GET.get("from"))
@@ -707,6 +758,7 @@ def _stats_selection(request: HttpRequest):
         "date_from": date_from,
         "date_to": date_to,
         "stats": stats,
+        "chart": _revenue_chart(stats["by_date"]),
     }
 
 
