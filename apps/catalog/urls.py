@@ -7,6 +7,10 @@ app_name = "catalog"
 
 urlpatterns = [
     path("", views.menu_dashboard, name="dashboard"),
+    path("groups/", views.groups_catalog, name="groups"),
+    path("groups/save/", views.group_save, name="group_save"),
+    path("groups/<int:pk>/save/", views.group_save, name="group_save_edit"),
+    path("tags/", views.tags_catalog, name="tags"),
 
     path("categories/new/", views.category_edit, name="category_create"),
     path("categories/<int:pk>/", views.category_edit, name="category_edit"),

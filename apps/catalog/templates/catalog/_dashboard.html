@@ -1,131 +1,152 @@
-{# Обновляемый HTMX-фрагмент дашборда меню (переключение доступности и т.п.). #}
-<div id="catalog-dashboard" class="stack">
-  <section class="stack">
-    <div class="section-title">
-      <h2>Категории и товары</h2>
-    </div>
-    <div class="cards">
-      {% for cat in categories %}
-        <article class="card {% if not cat.is_active %}inactive{% endif %}">
-          <header class="card-head" style="--cat-color: {{ cat.color }}">
-            <div>
-              <h2>{{ cat.name }}</h2>
-              <div class="card-head-sub">
-                {{ cat.products.count }} шт. · порядок {{ cat.order }}
-              </div>
-            </div>
-            <div class="card-actions">
-              <button type="button"
-                      class="switch-btn {% if not cat.is_active %}off{% endif %}"
-                      title="Скрыть/показать категорию на кассе"
-                      hx-post="{% url 'catalog:category_toggle' cat.id %}"
-                      hx-target="#catalog-dashboard"
-                      hx-swap="outerHTML">
-                {% if cat.is_active %}Активна{% else %}Скрыта{% endif %}
-              </button>
-              <a class="icon-btn" href="{% url 'catalog:category_edit' cat.id %}" title="Изменить">✎</a>
-              <a class="icon-btn danger" href="{% url 'catalog:category_delete' cat.id %}" title="Удалить">×</a>
-            </div>
-          </header>
-          <ul class="prod-list">
-            {% for prod in cat.products.all %}
-              <li class="{% if not prod.is_active %}inactive{% endif %}">
-                <div class="prod-name">
-                  {{ prod.name }}
-                  {% if prod.modifier_groups.all %}
-                    <em>· {% for g in prod.modifier_groups.all %}{{ g.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</em>
-                  {% endif %}
-                </div>
-                <div class="prod-price">{{ prod.price }} ₽</div>
-                <div class="row-actions">
-                  <button type="button"
-                          class="switch-btn {% if not prod.is_active %}off{% endif %}"
-                          hx-post="{% url 'catalog:product_toggle' prod.id %}"
-                          hx-target="#catalog-dashboard"
-                          hx-swap="outerHTML"
-                          title="Показать/скрыть товар на кассе">
-                    {% if prod.is_active %}В меню{% else %}Скрыт{% endif %}
-                  </button>
-                  <a class="icon-btn" href="{% url 'catalog:product_edit' prod.id %}" title="Изменить">✎</a>
-                  <a class="icon-btn danger" href="{% url 'catalog:product_delete' prod.id %}" title="Удалить">×</a>
-                </div>
-              </li>
-            {% empty %}
-              <li class="empty">В категории ещё нет товаров.</li>
-            {% endfor %}
-          </ul>
-          <div class="card-foot">
-            <a class="btn btn-ghost"
-               href="{% url 'catalog:product_create' %}?category={{ cat.id }}">+ Товар в категорию</a>
-          </div>
-        </article>
+{% load pos_extras %}
+<div id="catalog-dashboard" class="menu-editor">
+  {% include "catalog/_side.html" %}
+
+  <section class="menu-list">
+    <header class="menu-col-head">
+      <h2>Позиции</h2>
+      <a class="btn btn-primary" href="{% url 'catalog:dashboard' %}?new=1{% if active_tag %}&tag={{ active_tag.id }}{% endif %}">+ Новая</a>
+    </header>
+    <form class="pos-search" method="get" action="{% url 'catalog:dashboard' %}">
+      {% if active_tag %}<input type="hidden" name="tag" value="{{ active_tag.id }}">{% endif %}
+      <input type="search" name="q" value="{{ query }}" placeholder="поиск по названию…">
+    </form>
+    <div class="pos-scroll">
+      {% for product in products %}
+        <a class="pos-row {% if selected and selected.id == product.id and not creating %}is-on{% endif %} {% if not product.is_active %}is-hidden{% endif %}"
+           href="{% url 'catalog:dashboard' %}?product={{ product.id }}{% if active_tag %}&tag={{ active_tag.id }}{% endif %}{% if query %}&q={{ query|urlencode }}{% endif %}">
+          <span class="pos-main">
+            <span class="pos-title">
+              {{ product.name }}
+              <em class="menu-badge {% if not product.is_active %}is-off{% endif %}">{% if product.is_active %}в меню{% else %}скрыто{% endif %}</em>
+            </span>
+            <small>
+              {{ product.category.name }}
+              {% with groups=product.modifier_groups.all %}
+                {% if groups %}· допы: {% for g in groups %}{{ g.name|lower }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
+              {% endwith %}
+            </small>
+          </span>
+          <strong>{{ product.price|rub }}</strong>
+        </a>
       {% empty %}
-        <article class="card">
-          <div class="empty" style="padding: 24px;">
-            Пока ни одной категории.
-            <a href="{% url 'catalog:category_create' %}">Создайте первую</a>.
-          </div>
-        </article>
+        <p class="muted pos-empty">В этом фильтре позиций нет.</p>
       {% endfor %}
     </div>
   </section>
 
-  <section class="stack">
-    <div class="section-title">
-      <h2>Группы модификаторов</h2>
-      <a class="btn btn-ghost" href="{% url 'catalog:mgroup_create' %}">+ Новая группа</a>
-    </div>
-    <div class="cards">
-      {% for group in modifier_groups %}
-        <article class="card">
-          <header class="card-head">
-            <div>
-              <h3>{{ group.name }}</h3>
-              <div class="card-head-sub">
-                {{ group.get_selection_mode_display }}
-                {% if group.is_required %} · обязательна{% endif %}
-              </div>
-            </div>
-            <div class="card-actions">
-              <a class="icon-btn" href="{% url 'catalog:mgroup_edit' group.id %}" title="Изменить">✎</a>
-              <a class="icon-btn danger" href="{% url 'catalog:mgroup_delete' group.id %}" title="Удалить">×</a>
-            </div>
-          </header>
-          <ul class="prod-list">
-            {% for opt in group.options.all %}
-              <li class="{% if not opt.is_active %}inactive{% endif %}">
-                <div class="prod-name">{{ opt.name }}</div>
-                <div class="prod-price">
-                  {% if opt.price_delta %}{% if opt.price_delta > 0 %}+{% endif %}{{ opt.price_delta }} ₽{% else %}·{% endif %}
-                </div>
-                <div class="row-actions">
-                  <button type="button"
-                          class="switch-btn {% if not opt.is_active %}off{% endif %}"
-                          hx-post="{% url 'catalog:modifier_toggle' opt.id %}"
-                          hx-target="#catalog-dashboard"
-                          hx-swap="outerHTML">
-                    {% if opt.is_active %}Активна{% else %}Скрыта{% endif %}
-                  </button>
-                  <a class="icon-btn" href="{% url 'catalog:modifier_edit' opt.id %}" title="Изменить">✎</a>
-                  <a class="icon-btn danger" href="{% url 'catalog:modifier_delete' opt.id %}" title="Удалить">×</a>
-                </div>
-              </li>
+  <section class="menu-edit">
+    {% if creating or selected %}
+      <header class="menu-col-head">
+        <h2>Редактирование</h2>
+        <div class="edit-actions">
+          {% if selected and not creating %}
+            <form method="post" action="{% url 'catalog:product_delete' selected.id %}" onsubmit="return confirm('Удалить позицию «{{ selected.name }}»?');">
+              {% csrf_token %}
+              <button type="submit" class="link-danger">Удалить</button>
+            </form>
+          {% endif %}
+          <button type="submit" class="btn btn-primary" form="product-editor">Сохранить</button>
+        </div>
+      </header>
+      <form id="product-editor" class="edit-form" method="post"
+            action="{% if selected and not creating %}{% url 'catalog:product_edit' selected.id %}{% else %}{% url 'catalog:product_create' %}{% endif %}">
+        {% csrf_token %}
+        <button type="submit" hidden>Сохранить</button>
+        <input type="hidden" name="stay" value="1">
+        <input type="hidden" name="order" value="{% if selected and not creating %}{{ selected.order }}{% else %}0{% endif %}">
+        {% if form_errors %}
+          <p class="shift-error">Проверьте название, цену и тег.</p>
+        {% endif %}
+        <div class="edit-grid">
+          <label>
+            <span>Название</span>
+            <input type="text" name="name" required value="{% if selected and not creating %}{{ selected.name }}{% endif %}">
+          </label>
+          <label>
+            <span>Цена, ₽</span>
+            <input type="number" name="price" min="0" step="1" required value="{% if selected and not creating %}{{ selected.price|input_number }}{% endif %}">
+          </label>
+        </div>
+        <div class="vis-row">
+          <span>Показывать в кассе</span>
+          <label class="ios-switch">
+            <input type="checkbox" name="is_active" {% if creating or not selected or selected.is_active %}checked{% endif %}>
+            <span></span>
+          </label>
+        </div>
+        <div class="edit-block">
+          <div class="edit-block-head">
+            <span>Теги (вкладки на кассе)</span>
+          </div>
+          <div class="chip-row">
+            {% for cat in categories %}
+              <label class="tag-chip">
+                <input type="radio" name="category" value="{{ cat.id }}"
+                       {% if creating and active_tag and active_tag.id == cat.id %}checked
+                       {% elif creating and not active_tag and forloop.first %}checked
+                       {% elif selected and not creating and selected.category_id == cat.id %}checked{% endif %}>
+                {{ cat.name }}
+              </label>
             {% empty %}
-              <li class="empty">В группе ещё нет опций.</li>
+              <span class="muted">Сначала добавьте тег.</span>
             {% endfor %}
-          </ul>
-          <div class="card-foot">
-            <a class="btn btn-ghost"
-               href="{% url 'catalog:modifier_create' %}?group={{ group.id }}">+ Опция в группу</a>
+            <details class="tag-add">
+              <summary>+ тег</summary>
+              <input type="text" name="name" form="tag-create" placeholder="Название" required>
+              <button type="submit" class="btn btn-primary" form="tag-create">Добавить</button>
+            </details>
           </div>
-        </article>
-      {% empty %}
-        <article class="card">
-          <div class="empty" style="padding: 24px;">
-            Пока ни одной группы модификаторов.
+        </div>
+        <div class="edit-block">
+          <div class="edit-block-head">
+            <span>Допы для этой позиции</span>
+            <small>тап по группе</small>
           </div>
-        </article>
-      {% endfor %}
-    </div>
+          {% for group in groups %}
+            <label class="addon-card">
+              <input type="checkbox" name="modifier_groups" value="{{ group.id }}"
+                     {% if group.id in attached_ids %}checked{% endif %}>
+              <span class="addon-card-head">
+                <strong>{{ group.name }}</strong>
+                <em class="when-on">привязано</em>
+                <em class="when-off">не привязано</em>
+              </span>
+              <span class="mini-chips">
+                {% for opt in group.options.all %}
+                  {% if opt.is_active %}
+                    <i>{{ opt.name }} · {% if opt.price_delta %}{{ opt.price_delta|rub_delta }}{% else %}0₽{% endif %}</i>
+                  {% endif %}
+                {% empty %}
+                  <i class="muted">нет опций</i>
+                {% endfor %}
+              </span>
+            </label>
+          {% empty %}
+            <p class="muted">Групп допов ещё нет. Их заводят в справочнике.</p>
+          {% endfor %}
+        </div>
+        <p class="edit-foot">
+          {% if selected and not creating and attached_ids %}
+            На кассе у «{{ selected.name }}» будет метка «допы →».
+          {% elif selected and not creating %}
+            «{{ selected.name }}» без групп — 1 тап в заказ.
+          {% else %}
+            На кассе у позиции с допами будет метка «допы →». Без групп — 1 тап в заказ.
+          {% endif %}
+        </p>
+      </form>
+      <form id="tag-create" method="post" action="{% url 'catalog:category_create' %}" hidden>
+        {% csrf_token %}
+        <input type="hidden" name="slug" value="">
+        <input type="hidden" name="order" value="{{ categories|length }}">
+        <input type="hidden" name="color" value="#2e78d9">
+        <input type="hidden" name="is_active" value="on">
+        <input type="hidden" name="back" value="{{ request.get_full_path }}">
+      </form>
+    {% else %}
+      <header class="menu-col-head"><h2>Редактирование</h2></header>
+      <p class="muted pos-empty">Выберите позицию или нажмите «+ Новая».</p>
+    {% endif %}
   </section>
 </div>

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% load pos_extras %}
+
+{% block title %}Группы допов · {{ app_name }}{% endblock %}
+{% block body_class %}menu-editor-page{% endblock %}
+
+{% block content %}
+<div class="menu-editor">
+  {% include "catalog/_side.html" %}
+
+  <section class="menu-list">
+    <header class="menu-col-head">
+      <h2>Группы допов</h2>
+      <a class="btn btn-primary" href="{% url 'catalog:groups' %}?new=1">+ Группа</a>
+    </header>
+    <div class="pos-scroll">
+      {% for group in groups %}
+        <a class="pos-row {% if selected_group and selected_group.id == group.id and not creating_group %}is-on{% endif %}"
+           href="{% url 'catalog:groups' %}?group={{ group.id }}">
+          <span class="pos-main">
+            <span class="pos-title">{{ group.name }}</span>
+            <small>
+              {{ group.get_selection_mode_display }}
+              {% if group.is_required %} · обязательная{% else %} · необязательная{% endif %}
+              · {{ group.options.count }} опц.
+            </small>
+          </span>
+        </a>
+      {% empty %}
+        <p class="muted pos-empty">Групп ещё нет.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="menu-edit">
+    {% if creating_group or selected_group %}
+      <header class="menu-col-head">
+        <h2>{% if creating_group %}Новая группа{% else %}{{ selected_group.name }}{% endif %}</h2>
+        <div class="edit-actions">
+          {% if selected_group and not creating_group %}
+            <form method="post" action="{% url 'catalog:mgroup_delete' selected_group.id %}" onsubmit="return confirm('Удалить группу «{{ selected_group.name }}»?');">
+              {% csrf_token %}
+              <input type="hidden" name="back" value="{% url 'catalog:groups' %}">
+              <button type="submit" class="link-danger">Удалить</button>
+            </form>
+          {% endif %}
+          <button type="submit" class="btn btn-primary" form="group-editor">Сохранить</button>
+        </div>
+      </header>
+      <form id="group-editor" class="edit-form" method="post"
+            action="{% if selected_group and not creating_group %}{% url 'catalog:group_save_edit' selected_group.id %}{% else %}{% url 'catalog:group_save' %}{% endif %}">
+        {% csrf_token %}
+        <button type="submit" hidden>Сохранить</button>
+        <input type="hidden" name="slug" value="{% if selected_group and not creating_group %}{{ selected_group.slug }}{% endif %}">
+        <input type="hidden" name="order" value="{% if selected_group and not creating_group %}{{ selected_group.order }}{% else %}{{ groups|length }}{% endif %}">
+        {% if group_errors %}
+          <p class="shift-error">Укажите название группы.</p>
+        {% endif %}
+        <label>
+          <span>Название</span>
+          <input type="text" name="name" required value="{% if selected_group and not creating_group %}{{ selected_group.name }}{% endif %}">
+        </label>
+        <div class="edit-block">
+          <div class="edit-block-head"><span>Режим выбора</span></div>
+          <div class="chip-row">
+            <label class="tag-chip">
+              <input type="radio" name="selection_mode" value="single"
+                     {% if not selected_group or creating_group or selected_group.selection_mode == 'single' %}checked{% endif %}>
+              Один вариант
+            </label>
+            <label class="tag-chip">
+              <input type="radio" name="selection_mode" value="multi"
+                     {% if selected_group and not creating_group and selected_group.selection_mode == 'multi' %}checked{% endif %}>
+              Несколько
+            </label>
+          </div>
+        </div>
+        <div class="vis-row">
+          <span>Обязательный выбор</span>
+          <label class="ios-switch">
+            <input type="checkbox" name="is_required" {% if selected_group and not creating_group and selected_group.is_required %}checked{% endif %}>
+            <span></span>
+          </label>
+        </div>
+        {% if selected_group and not creating_group %}
+          <div class="edit-block">
+            <div class="edit-block-head">
+              <span>Опции</span>
+              <small>название, цена, по умолчанию</small>
+            </div>
+            {% for opt in selected_group.options.all %}
+              <div class="opt-row">
+                <input type="hidden" name="option_id" value="{{ opt.id }}">
+                <input type="text" name="name_{{ opt.id }}" value="{{ opt.name }}" aria-label="Название опции">
+                <input type="number" name="price_{{ opt.id }}" step="1" value="{{ opt.price_delta|input_number }}" aria-label="Надбавка, ₽">
+                <label class="opt-default">
+                  <input type="checkbox" name="default_{{ opt.id }}" {% if opt.is_default %}checked{% endif %}>
+                  по умолчанию
+                </label>
+                <button type="submit" class="icon-btn danger" formaction="{% url 'catalog:modifier_delete' opt.id %}" formnovalidate name="back" value="{% url 'catalog:groups' %}?group={{ selected_group.id }}" onclick="return confirm('Удалить опцию «{{ opt.name }}»?');" title="Удалить">×</button>
+              </div>
+            {% endfor %}
+            <div class="opt-row opt-new">
+              <input type="text" name="new_name" placeholder="новая опция">
+              <input type="number" name="new_price" step="1" placeholder="+0" aria-label="Надбавка новой опции">
+              <label class="opt-default">
+                <input type="checkbox" name="new_default">
+                по умолчанию
+              </label>
+            </div>
+          </div>
+          <p class="edit-foot">В группе одного выбора отмеченная опция уже выбрана в шторке на кассе. Нулевая цена — «0₽».</p>
+        {% else %}
+          <p class="edit-foot">Сохраните группу, затем добавьте опции с ценой и вариантом по умолчанию.</p>
+        {% endif %}
+      </form>
+    {% else %}
+      <header class="menu-col-head"><h2>Группа</h2></header>
+      <p class="muted pos-empty">Выберите группу или нажмите «+ Группа».</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

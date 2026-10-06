@@ -78,6 +78,15 @@ def js_number(value) -> str:
     return format(_as_decimal(value), "f")
 
 
+@register.filter(name="input_number")
+def input_number(value) -> str:
+    """Число для поля ввода: ``220`` вместо ``220.00``."""
+    text = format(_as_decimal(value), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
 @register.filter(name="ru_date")
 def ru_date(value) -> str:
     """Длинная дата без часов: ``5 октября 2026``."""

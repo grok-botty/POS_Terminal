@@ -124,11 +124,13 @@ HTTP-контракт и URL-карта
 Меню (Catalog, менеджерская зона)
 ---------------------------------
 
-* ``/catalog/`` — обзор.
-* ``/catalog/categories/new/``, ``/catalog/categories/<id>/`` — CRUD категорий.
-* ``/catalog/products/new/``, ``/catalog/products/<id>/`` — CRUD товаров.
-* ``/catalog/modifier-groups/…`` — CRUD групп модификаторов.
-* ``/catalog/modifiers/…`` — CRUD опций.
+* ``/catalog/`` — редактор позиций (``?product=``, ``?tag=``, ``?q=``, ``?new=1``).
+* ``/catalog/groups/`` — справочник групп допов. POST ``/catalog/groups/save/``
+  и ``/catalog/groups/<id>/save/`` сохраняют группу и опции (цена, дефолт).
+* ``/catalog/tags/`` — справочник тегов (категорий).
+* ``/catalog/categories/…``, ``/catalog/products/…``,
+  ``/catalog/modifier-groups/…``, ``/catalog/modifiers/…`` — те же операции
+  отдельными формами. POST товара с ``stay=1`` возвращает в редактор.
 
 Аналитика
 ---------
