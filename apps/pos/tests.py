@@ -387,7 +387,9 @@ class ShiftScreenTests(TestCase):
     def test_open_shift_stores_the_typed_cashier_name(self):
         page = self.client.get(reverse("pos:shift"))
         self.assertContains(page, "автор проги")
-        self.assertContains(page, "https://github.com/LotFullKa")
+        self.assertContains(page, "https://t.me/LotFullKa")
+        self.assertContains(page, 'target="_blank"')
+        self.assertContains(page, 'rel="noopener"')
         self.assertContains(page, "@LotFullKa")
         self.assertContains(page, 'name="cashier_name"')
         self.assertContains(page, 'value="cashier"')
