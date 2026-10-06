@@ -1,5 +1,6 @@
 """Тесты экрана кассы: допы, очередь и цикл статуса."""
 
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -8,7 +9,7 @@ from django.urls import reverse
 
 from apps.catalog.models import Category, Modifier, ModifierGroup, Product
 from apps.orders import services
-from apps.orders.models import Order
+from apps.orders.models import Order, Shift
 from apps.pos.views import FUNNY_GUESTS
 
 
@@ -40,6 +41,9 @@ class RegisterScreenTests(TestCase):
         )
         cls.croissant = Product.objects.create(
             name="Круассан", price=Decimal("120"), category=cls.food
+        )
+        cls.shift = Shift.objects.create(
+            business_date=date(2026, 10, 5), is_open=True, opened_by=cls.user
         )
 
     def setUp(self):
@@ -152,3 +156,147 @@ class RegisterScreenTests(TestCase):
         response = self.client.get(reverse("pos:line_edit", args=[line.id]))
         self.assertContains(response, "Латте · допы")
         self.assertContains(response, "В заказ")
+
+
+class ShiftScreenTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="cashier", password="pw")
+        self.client.force_login(self.user)
+        self.cat = Category.objects.create(name="Классика", slug="klassika")
+        self.latte = Product.objects.create(
+            name="Латте", price=Decimal("200"), category=self.cat
+        )
+
+    def test_tabs_stay_locked_until_a_shift_is_open(self):
+        response = self.client.get(reverse("pos:shift"))
+        self.assertContains(response, "Открыть смену")
+        self.assertContains(response, "Смена не открыта")
+        self.assertContains(response, "is-disabled")
+        self.assertContains(response, 'href="/catalog/"')
+        self.assertRedirects(
+            self.client.get(reverse("pos:register")), reverse("pos:shift")
+        )
+        self.assertRedirects(
+            self.client.get(reverse("pos:stats")), reverse("pos:shift")
+        )
+
+    def test_open_shift_keeps_the_posted_date(self):
+        response = self.client.post(
+            reverse("pos:shift"),
+            {"action": "open", "business_date": "2020-01-02"},
+        )
+        self.assertRedirects(response, reverse("pos:register"))
+        shift = Shift.objects.get()
+        self.assertEqual(shift.business_date, date(2020, 1, 2))
+        self.assertTrue(shift.is_open)
+        self.assertIsNone(shift.opened_at)
+        self.assertEqual(shift.opened_by, self.user)
+        self.assertNotEqual(shift.business_date, date(2026, 10, 6))
+
+        Shift.objects.all().delete()
+        response = self.client.post(reverse("pos:shift"), {"action": "open"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Укажите дату смены")
+        self.assertFalse(Shift.objects.exists())
+
+    def test_close_requires_the_exact_word_and_keeps_unfinished_orders(self):
+        shift = Shift.objects.create(
+            business_date=date(2026, 10, 5), is_open=True, opened_by=self.user
+        )
+        order = services.create_order(created_by=self.user)
+        services.add_line(order, self.latte, quantity=1)
+        services.enqueue_order(order)
+
+        page = self.client.get(reverse("pos:shift"))
+        self.assertContains(page, "Закрыть смену")
+        self.assertContains(page, "Есть незавершённые заказы")
+        self.assertContains(page, "5 октября 2026")
+
+        refused = self.client.post(
+            reverse("pos:shift"),
+            {"action": "close", "confirmation": "закрыть"},
+        )
+        self.assertEqual(refused.status_code, 200)
+        self.assertContains(refused, "ЗАКРЫТЬ")
+        shift.refresh_from_db()
+        self.assertTrue(shift.is_open)
+
+        closed = self.client.post(
+            reverse("pos:shift"),
+            {"action": "close", "confirmation": "ЗАКРЫТЬ"},
+        )
+        self.assertRedirects(closed, reverse("pos:shift"))
+        shift.refresh_from_db()
+        order.refresh_from_db()
+        self.assertFalse(shift.is_open)
+        self.assertIsNone(shift.closed_at)
+        self.assertEqual(shift.closed_by, self.user)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertEqual(order.shift_id, shift.id)
+        locked = self.client.get(reverse("pos:shift"))
+        self.assertContains(locked, "Открыть смену")
+        self.assertContains(locked, "Смена не открыта")
+
+
+class StatsByShiftDateTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="cashier", password="pw")
+        self.client.force_login(self.user)
+        self.cat = Category.objects.create(
+            name="Классика", slug="klassika", color="#2e78d9"
+        )
+        self.latte = Product.objects.create(
+            name="Латте", price=Decimal("200"), category=self.cat
+        )
+        self.espresso = Product.objects.create(
+            name="Эспрессо", price=Decimal("150"), category=self.cat
+        )
+        self.early = Shift.objects.create(business_date=date(2026, 10, 1), is_open=False)
+        self.late = Shift.objects.create(
+            business_date=date(2026, 10, 5), is_open=True, opened_by=self.user
+        )
+        morning = services.create_order()
+        services.add_line(morning, self.latte, quantity=2)
+        morning.shift = self.early
+        services.pay_order(morning)
+        services.mark_ready(morning)
+
+        evening = services.create_order()
+        services.add_line(evening, self.espresso, quantity=1)
+        evening.shift = self.late
+        services.pay_order(evening)
+        services.mark_ready(evening)
+
+        dropped = services.create_order()
+        services.add_line(dropped, self.espresso, quantity=1)
+        dropped.shift = self.late
+        services.pay_order(dropped)
+        services.cancel_order(dropped)
+
+    def test_this_shift_ignores_other_business_dates(self):
+        response = self.client.get(reverse("pos:stats") + "?period=this")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Эспрессо")
+        self.assertNotContains(response, "Латте")
+        self.assertContains(response, "150 ₽")
+        self.assertContains(response, "Выгрузить CSV")
+        self.assertEqual(response.context["stats"]["issued"], 1)
+        self.assertEqual(response.context["stats"]["cancelled"], 1)
+        self.assertEqual(response.context["stats"]["revenue"], Decimal("150.00"))
+
+    def test_date_range_uses_shift_business_date(self):
+        url = reverse("pos:stats") + "?from=2026-10-01&to=2026-10-01"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Латте")
+        self.assertNotContains(response, "Эспрессо")
+        self.assertEqual(response.context["stats"]["revenue"], Decimal("400.00"))
+        self.assertEqual(response.context["stats"]["issued"], 1)
+        self.assertEqual(response.context["stats"]["cancelled"], 0)
+
+        exported = self.client.get(reverse("pos:stats_csv") + "?from=2026-10-01&to=2026-10-01")
+        body = exported.content.decode("utf-8-sig")
+        self.assertIn("2026-10-01", body)
+        self.assertIn("Латте", body)
+        self.assertNotIn("Эспрессо", body)
+        self.assertNotIn("2026-10-05", body)

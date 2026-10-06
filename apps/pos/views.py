@@ -8,13 +8,17 @@
 
 from __future__ import annotations
 
+import csv
 import random
+from datetime import datetime
 from decimal import Decimal
+from functools import wraps
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Prefetch
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
@@ -43,6 +47,48 @@ FUNNY_GUESTS = (
 def funny_guest_name() -> str:
     """Случайное имя, чтобы чек не уходил в очередь безымянным."""
     return random.choice(FUNNY_GUESTS)
+
+
+def open_shift_required(view):
+    """Пускать на кассу, меню и статистику только при открытой смене.
+
+    Без смены шапка гасит вкладки, а сервер всё равно возвращает на
+    «Смену»: дату нельзя подставить с часов ноутбука.
+    """
+
+    @wraps(view)
+    def wrapper(request: HttpRequest, *args, **kwargs):
+        if order_services.get_open_shift() is None:
+            target = reverse("pos:shift")
+            if request.headers.get("HX-Request"):
+                resp = HttpResponse(status=204)
+                resp["HX-Redirect"] = target
+                return resp
+            return redirect(target)
+        return view(request, *args, **kwargs)
+
+    return wrapper
+
+
+def _parse_iso_date(raw: str | None):
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+_BAR_COLORS = (
+    "#2e78d9",
+    "#f0a04b",
+    "#3cbf7a",
+    "#e6c229",
+    "#5b8def",
+    "#8b6ad6",
+    "#5bb8a8",
+    "#7eb6ff",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +197,7 @@ def _redirect_register() -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 def register(request: HttpRequest) -> HttpResponse:
     """Полная страница кассы (первичная загрузка)."""
     category_id = request.GET.get("category")
@@ -164,22 +211,84 @@ def register(request: HttpRequest) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
-def shift_placeholder(request: HttpRequest) -> HttpResponse:
-    """Вкладка «Смена»: открытие и закрытие с ручной датой — следующий проход."""
+@require_http_methods(["GET", "POST"])
+def shift_screen(request: HttpRequest) -> HttpResponse:
+    """Открыть смену на ручную дату или закрыть её в два шага.
+
+    Второй шаг принимает только слово ``ЗАКРЫТЬ``. Незавершённые заказы
+    не отменяются: предупреждение на первом шаге предлагает оставить их
+    в истории или пометить отменёнными на кассе заранее.
+    """
+    current = order_services.get_open_shift()
+    if request.method == "POST" and request.POST.get("action") == "open":
+        business_date = _parse_iso_date(request.POST.get("business_date"))
+        try:
+            opened = order_services.open_shift(
+                business_date=business_date,
+                opened_by=request.user,
+            )
+        except order_services.ShiftError as exc:
+            return render(
+                request,
+                "pos/shift.html",
+                {
+                    "mode": "open",
+                    "error": str(exc),
+                    "posted_date": request.POST.get("business_date", ""),
+                },
+            )
+        messages.success(
+            request,
+            f"Смена открыта на {opened.business_date:%d.%m.%Y}.",
+        )
+        return redirect("pos:register")
+
+    if current is None:
+        return render(request, "pos/shift.html", {"mode": "open", "posted_date": ""})
+
+    summary = order_services.shift_summary(current)
+    if request.method == "POST" and request.POST.get("action") == "close":
+        try:
+            order_services.close_shift(
+                current,
+                confirmation=request.POST.get("confirmation", ""),
+                closed_by=request.user,
+            )
+        except order_services.ShiftError as exc:
+            return render(
+                request,
+                "pos/shift.html",
+                {
+                    "mode": "confirm",
+                    "shift": current,
+                    "summary": summary,
+                    "error": str(exc),
+                    "confirmation": request.POST.get("confirmation", ""),
+                },
+            )
+        messages.success(
+            request,
+            "Смена закрыта. Незавершённые заказы оставлены в её истории.",
+        )
+        return redirect("pos:shift")
+
+    mode = "confirm" if request.GET.get("step") == "confirm" else "close"
     return render(
         request,
         "pos/shift.html",
-        {"open_shift": order_services.get_open_shift()},
+        {"mode": mode, "shift": current, "summary": summary},
     )
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 def order_panel(request: HttpRequest) -> HttpResponse:
     """HTMX-цель: перерисовать только правую панель текущего заказа."""
     return _order_panel(request)
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 def products_grid(request: HttpRequest) -> HttpResponse:
     """HTMX-цель: переключить категорию без полной перезагрузки страницы."""
     category_id = request.GET.get("category")
@@ -190,6 +299,7 @@ def products_grid(request: HttpRequest) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 def queue_fragment(request: HttpRequest) -> HttpResponse:
     """Левая колонка очереди — для цикла статуса и периодического обновления."""
     return render(
@@ -204,6 +314,7 @@ def queue_fragment(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 def modifier_picker(request: HttpRequest, product_id: int) -> HttpResponse:
     """Шторка допов. У товара без групп допов позиция сразу попадает в заказ."""
     product = get_object_or_404(Product, pk=product_id, is_active=True)
@@ -219,6 +330,7 @@ def modifier_picker(request: HttpRequest, product_id: int) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
     """Добавить товар (с опциональными допами и заметкой) в текущий заказ."""
@@ -246,6 +358,7 @@ def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["GET", "POST"])
 def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
     """Открыть шторку допов для уже добавленной позиции или сохранить правки."""
@@ -288,6 +401,7 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def line_inc(request: HttpRequest, line_id: int) -> HttpResponse:
     line = get_object_or_404(OrderLine, pk=line_id, order__status=Order.Status.NEW)
@@ -297,6 +411,7 @@ def line_inc(request: HttpRequest, line_id: int) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def line_dec(request: HttpRequest, line_id: int) -> HttpResponse:
     line = get_object_or_404(OrderLine, pk=line_id, order__status=Order.Status.NEW)
@@ -306,6 +421,7 @@ def line_dec(request: HttpRequest, line_id: int) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def line_remove(request: HttpRequest, line_id: int) -> HttpResponse:
     line = get_object_or_404(OrderLine, pk=line_id, order__status=Order.Status.NEW)
@@ -319,6 +435,7 @@ def line_remove(request: HttpRequest, line_id: int) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def order_meta(request: HttpRequest) -> HttpResponse:
     """Обновить имя гостя, комментарий и «с собой». Панель не перерисовываем."""
@@ -342,6 +459,7 @@ def order_meta(request: HttpRequest) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def order_pay(request: HttpRequest) -> HttpResponse:
     """Оплатить текущий заказ и открыть следующий чек."""
@@ -356,6 +474,7 @@ def order_pay(request: HttpRequest) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def order_enqueue(request: HttpRequest) -> HttpResponse:
     """Поставить заказ в очередь баристы без оплаты."""
@@ -370,6 +489,7 @@ def order_enqueue(request: HttpRequest) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def order_discard(request: HttpRequest) -> HttpResponse:
     """Удалить текущий черновик заказа и открыть свежий."""
@@ -383,6 +503,7 @@ def order_discard(request: HttpRequest) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
+@open_shift_required
 @require_http_methods(["POST"])
 def queue_cycle(request: HttpRequest, pk: int) -> HttpResponse:
     """Один тап по статусу: не готово → готово → отменено."""
@@ -417,3 +538,85 @@ def _order_panel_error(request: HttpRequest, order: Order, message: str) -> Http
         "pos/_order_panel.html",
         {"order": order, "panel_error": message},
     )
+
+
+def _stats_selection(request: HttpRequest):
+    """Период статистики. Диапазон дат важнее готовых отрезков."""
+    date_from = _parse_iso_date(request.GET.get("from"))
+    date_to = _parse_iso_date(request.GET.get("to"))
+    asked_for_range = bool(request.GET.get("from") or request.GET.get("to"))
+    if asked_for_range:
+        period = "range"
+    else:
+        period = request.GET.get("period") or "this"
+        if period not in {"this", "7", "30", "all"}:
+            period = "this"
+        date_from = None
+        date_to = None
+    if period == "range" and date_from is None and date_to is None:
+        shifts = []
+    else:
+        shifts = order_services.select_shifts(
+            period=period, date_from=date_from, date_to=date_to
+        )
+    stats = order_services.aggregate_shift_stats(shifts)
+    for index, row in enumerate(stats["items"]):
+        row["color"] = _BAR_COLORS[index % len(_BAR_COLORS)]
+    return {
+        "period": period,
+        "date_from": date_from,
+        "date_to": date_to,
+        "stats": stats,
+    }
+
+
+@login_required(login_url="accounts:login")
+@open_shift_required
+def stats(request: HttpRequest) -> HttpResponse:
+    """Статистика по бизнес-датам смен, без разбивки по часам."""
+    return render(request, "pos/stats.html", _stats_selection(request))
+
+
+@login_required(login_url="accounts:login")
+@open_shift_required
+def stats_csv(request: HttpRequest) -> HttpResponse:
+    """CSV выбранного периода. Файл собирается из локальной базы."""
+    selection = _stats_selection(request)
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="statistika.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response)
+    writer.writerow([
+        "Дата смены",
+        "Заказ",
+        "Гость",
+        "Статус",
+        "Оплачен",
+        "Позиция",
+        "Кол-во",
+        "Допы",
+        "Сумма позиции",
+    ])
+    ids = [shift.id for shift in selection["stats"]["shifts"]]
+    lines = (
+        OrderLine.objects.filter(order__shift_id__in=ids)
+        .exclude(order__status=Order.Status.NEW)
+        .select_related("order__shift")
+        .prefetch_related("modifiers")
+        .order_by("order__shift__business_date", "order_id", "id")
+    )
+    for line in lines:
+        order = line.order
+        addons = ", ".join(m.name_snapshot for m in line.modifiers.all())
+        writer.writerow([
+            order.shift.business_date.isoformat() if order.shift_id else "",
+            order.short_code,
+            order.guest_name,
+            order.barista_label() if order.status != Order.Status.HANDED_OFF else "Отдан",
+            "да" if order.is_paid else "нет",
+            line.name_snapshot,
+            line.quantity,
+            addons,
+            f"{line.subtotal():.2f}",
+        ])
+    return response

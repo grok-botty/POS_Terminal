@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -18,6 +19,14 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from apps.catalog.models import Category, Modifier, ModifierGroup, Product
+from apps.orders.models import Shift
+
+
+def open_shift(user=None):
+    """Касса и меню без открытой смены уводят на экран «Смена»."""
+    return Shift.objects.create(
+        business_date=date(2026, 10, 5), is_open=True, opened_by=user
+    )
 
 
 User = get_user_model()
@@ -58,6 +67,7 @@ class CatalogPermissionsTests(TestCase):
 
     def test_manager_allowed(self):
         self.client.login(username="mgr", password="pw")
+        open_shift(self.manager)
         response = self.client.get(reverse("catalog:dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Управление меню")
@@ -66,8 +76,15 @@ class CatalogPermissionsTests(TestCase):
 class CatalogNavigationTests(TestCase):
     """Верхняя навигация не должна вести в /admin/ для обычных менеджеров."""
 
+    def test_manager_without_shift_is_sent_to_open_it(self):
+        User.objects.create_user(username="mgr", password="pw", role=User.ROLE_ADMIN)
+        self.client.login(username="mgr", password="pw")
+        response = self.client.get(reverse("catalog:dashboard"))
+        self.assertRedirects(response, reverse("pos:shift"))
+
     def test_manager_topbar_hides_django_admin(self):
         user = User.objects.create_user(username="m", password="pw", role=User.ROLE_ADMIN)
+        open_shift(user)
         self.client.force_login(user)
         response = self.client.get(reverse("pos:register"))
         self.assertContains(response, 'href="/catalog/"')
@@ -80,6 +97,7 @@ class CatalogNavigationTests(TestCase):
         user.is_superuser = True
         user.is_staff = True
         user.save()
+        open_shift(user)
         self.client.force_login(user)
         response = self.client.get(reverse("pos:register"))
         self.assertContains(response, 'href="/admin/"')
@@ -99,6 +117,7 @@ class ProductCrudTests(TestCase):
         cls.group = ModifierGroup.objects.create(name="Молоко", slug="milk")
 
     def setUp(self):
+        open_shift(self.manager)
         self.client.login(username="mgr", password="pw")
 
     def test_create_product_via_form(self):
@@ -182,6 +201,7 @@ class CategoryCrudTests(TestCase):
         )
 
     def setUp(self):
+        open_shift(self.manager)
         self.client.login(username="mgr", password="pw")
 
     def test_create_category_generates_slug(self):
@@ -215,6 +235,7 @@ class ModifierCrudTests(TestCase):
         cls.group = ModifierGroup.objects.create(name="Сиропы", slug="syrups")
 
     def setUp(self):
+        open_shift(self.manager)
         self.client.login(username="mgr", password="pw")
 
     def test_create_modifier(self):
@@ -262,6 +283,7 @@ class DashboardRenderingTests(TestCase):
         ModifierGroup.objects.create(name="Молоко", slug="milk")
 
     def test_dashboard_shows_products_and_toggle(self):
+        open_shift(self.manager)
         self.client.force_login(self.manager)
         response = self.client.get(reverse("catalog:dashboard"))
         self.assertEqual(response.status_code, 200)

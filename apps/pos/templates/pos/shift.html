@@ -2,24 +2,72 @@
 {% load pos_extras %}
 
 {% block title %}Смена · {{ app_name }}{% endblock %}
+{% block body_class %}shift-page{% endblock %}
 
 {% block content %}
-<section class="stack narrow">
-  <header class="page-header">
-    <h1>Смена</h1>
-  </header>
-  <div class="paper" style="padding: 20px 24px;">
-    {% if open_shift %}
-      <p>Открыта смена <strong>{{ open_shift|shift_chip }}</strong> ({{ open_shift.business_date|date:"d.m.Y" }}).</p>
-      <p class="muted">Новые заказы привязываются к этой дате. Часы ноутбука для бизнес-даты не используются.</p>
+<div class="shift-wrap">
+  <section class="shift-card">
+    {% if mode == "open" %}
+      <h1>Открыть смену</h1>
+      <p class="shift-lead">Оффлайн · дата ставится вручную (часы ноута не используем).</p>
+      {% if error %}<p class="shift-error">{{ error }}</p>{% endif %}
+      <form method="post" class="shift-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="open">
+        <label class="field">
+          <span>Дата смены</span>
+          <input type="date" name="business_date" required value="{{ posted_date }}">
+        </label>
+        <label class="field">
+          <span>Кассир</span>
+          <input type="text" value="{{ user.username }}" readonly>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Открыть смену</button>
+      </form>
+
+    {% elif mode == "confirm" %}
+      <h1>Закрыть смену</h1>
+      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · {{ shift.opened_by.username|default:user.username }}</p>
+      <p class="shift-lead">Введите <strong>ЗАКРЫТЬ</strong> заглавными буквами. Одна кнопка смену не закрывает.</p>
+      {% if summary.unfinished %}
+        <p class="shift-note">Незавершённые заказы не отменятся сами — они останутся в истории этой смены. Пометить их отменёнными можно на кассе до закрытия.</p>
+      {% endif %}
+      {% if error %}<p class="shift-error">{{ error }}</p>{% endif %}
+      <form method="post" class="shift-form" x-data="{ text: '{{ confirmation|default:''|escapejs }}' }">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="close">
+        <label class="field">
+          <span>Подтверждение</span>
+          <input type="text" name="confirmation" x-model="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ЗАКРЫТЬ">
+        </label>
+        <div class="shift-actions">
+          <a class="btn btn-block" href="{% url 'pos:shift' %}">Не закрывать</a>
+          <button type="submit" class="btn btn-close-confirm btn-block" :disabled="text.trim() !== 'ЗАКРЫТЬ'">Да, закрыть смену</button>
+        </div>
+      </form>
+
     {% else %}
-      <p>Смена не открыта.</p>
-      <p class="muted">
-        Открытие и закрытие смены с ручной датой — следующий проход.
-        Пока дату можно завести в Django-админке (модель «Смена») или оставить кассу без смены:
-        заказы всё равно оформляются, просто без бизнес-даты.
-      </p>
+      <h1>Закрыть смену</h1>
+      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · {{ shift.opened_by.username|default:user.username }}</p>
+      <dl class="shift-stats">
+        <div><dt>Заказов</dt><dd>{{ summary.orders }}</dd></div>
+        <div><dt>Оплачено</dt><dd>{{ summary.paid|rub }}</dd></div>
+        <div><dt>Отменено</dt><dd>{{ summary.cancelled }}</dd></div>
+        <div>
+          <dt>В очереди ещё</dt>
+          <dd>{{ summary.unfinished }} <span class="muted">(не готово)</span></dd>
+        </div>
+      </dl>
+      {% if summary.unfinished %}
+        <div class="shift-warn">
+          <strong>⚠ Есть незавершённые заказы</strong>
+          <span>Их можно оставить в истории или пометить отменёнными.</span>
+        </div>
+      {% endif %}
+      <a class="btn btn-soft-danger btn-block" href="{% url 'pos:shift' %}?step=confirm">Закрыть смену…</a>
+      <p class="shift-hint">Одна кнопка не закрывает — нужен второй шаг.</p>
+      <a class="btn btn-block" href="{% url 'pos:register' %}">Отмена</a>
     {% endif %}
-  </div>
-</section>
+  </section>
+</div>
 {% endblock %}

@@ -133,6 +133,58 @@ class OrderServicesTests(TestCase):
     def test_business_date_is_empty_without_a_shift(self) -> None:
         self.assertIsNone(services.current_business_date())
 
+    def test_open_shift_uses_the_given_date_and_refuses_a_second_one(self) -> None:
+        shift = services.open_shift(business_date=date(2020, 1, 2))
+        self.assertEqual(shift.business_date, date(2020, 1, 2))
+        self.assertIsNone(shift.opened_at)
+        self.assertTrue(shift.is_open)
+        with self.assertRaises(services.ShiftError):
+            services.open_shift(business_date=date(2020, 1, 3))
+        with self.assertRaises(services.ShiftError):
+            services.open_shift(business_date=None)
+
+    def test_close_shift_requires_phrase_and_leaves_unfinished_orders(self) -> None:
+        shift = services.open_shift(business_date=date(2026, 10, 5))
+        order = services.create_order()
+        services.add_line(order, self.latte, quantity=1)
+        services.enqueue_order(order)
+        with self.assertRaises(services.ShiftError):
+            services.close_shift(shift, confirmation="закрыть")
+        shift.refresh_from_db()
+        self.assertTrue(shift.is_open)
+        services.close_shift(shift, confirmation=" ЗАКРЫТЬ ")
+        shift.refresh_from_db()
+        order.refresh_from_db()
+        self.assertFalse(shift.is_open)
+        self.assertIsNone(shift.closed_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+
+    def test_stats_group_by_shift_business_date(self) -> None:
+        early = Shift.objects.create(business_date=date(2026, 10, 1), is_open=False)
+        late = services.open_shift(business_date=date(2026, 10, 5))
+        morning = services.create_order()
+        services.add_line(morning, self.latte, quantity=2)
+        morning.shift = early
+        services.pay_order(morning)
+        services.mark_ready(morning)
+        evening = services.create_order()
+        services.add_line(evening, self.latte, quantity=1)
+        evening.shift = late
+        services.pay_order(evening)
+        services.mark_ready(evening)
+
+        current = services.aggregate_shift_stats(services.select_shifts(period="this"))
+        self.assertEqual([s.id for s in current["shifts"]], [late.id])
+        self.assertEqual(current["revenue"], Decimal("200.00"))
+        self.assertEqual(current["issued"], 1)
+
+        ranged = services.aggregate_shift_stats(
+            services.select_shifts(date_from=date(2026, 10, 1), date_to=date(2026, 10, 1))
+        )
+        self.assertEqual([s.id for s in ranged["shifts"]], [early.id])
+        self.assertEqual(ranged["revenue"], Decimal("400.00"))
+        self.assertEqual(ranged["issued"], 1)
+
     def test_all_ready_bulk_action(self) -> None:
         for _ in range(3):
             o = services.create_order()

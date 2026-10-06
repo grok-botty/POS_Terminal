@@ -7,7 +7,9 @@ app_name = "pos"
 
 urlpatterns = [
     path("", views.register, name="register"),
-    path("shift/", views.shift_placeholder, name="shift"),
+    path("shift/", views.shift_screen, name="shift"),
+    path("stats/", views.stats, name="stats"),
+    path("stats/export/", views.stats_csv, name="stats_csv"),
     path("panel/", views.order_panel, name="order_panel"),
     path("queue/", views.queue_fragment, name="queue_fragment"),
     path("queue/<int:pk>/cycle/", views.queue_cycle, name="queue_cycle"),

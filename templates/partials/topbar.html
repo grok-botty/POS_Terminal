@@ -1,11 +1,11 @@
 {% load pos_extras %}
 <header class="topbar">
   <div class="topbar-left">
-    <a class="brand" href="{% url 'pos:register' %}">6ка</a>
+    <a class="brand" href="{% if open_shift %}{% url 'pos:register' %}{% else %}{% url 'pos:shift' %}{% endif %}">6ка</a>
     <nav class="nav">
-      <a href="{% url 'pos:register' %}" class="nav-link {% if request.resolver_match.namespace == 'pos' and request.resolver_match.url_name != 'shift' %}active{% endif %}">Касса</a>
-      <a href="{% url 'catalog:dashboard' %}" class="nav-link {% if request.resolver_match.namespace == 'catalog' %}active{% endif %}">Меню</a>
-      <a href="{% url 'analytics:dashboard' %}" class="nav-link {% if request.resolver_match.namespace == 'analytics' %}active{% endif %}">Статистика</a>
+      <a href="{% url 'pos:register' %}" class="nav-link {% if not open_shift %}is-disabled{% elif request.resolver_match.namespace == 'pos' and request.resolver_match.url_name == 'register' %}active{% endif %}" {% if not open_shift %}aria-disabled="true" tabindex="-1"{% endif %}>Касса</a>
+      <a href="{% url 'catalog:dashboard' %}" class="nav-link {% if not open_shift %}is-disabled{% elif request.resolver_match.namespace == 'catalog' %}active{% endif %}" {% if not open_shift %}aria-disabled="true" tabindex="-1"{% endif %}>Меню</a>
+      <a href="{% url 'pos:stats' %}" class="nav-link {% if not open_shift %}is-disabled{% elif request.resolver_match.namespace == 'pos' and request.resolver_match.url_name == 'stats' %}active{% endif %}" {% if not open_shift %}aria-disabled="true" tabindex="-1"{% endif %}>Статистика</a>
       <a href="{% url 'pos:shift' %}" class="nav-link {% if request.resolver_match.namespace == 'pos' and request.resolver_match.url_name == 'shift' %}active{% endif %}">Смена</a>
     </nav>
   </div>

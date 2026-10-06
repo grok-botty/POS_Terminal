@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% load pos_extras %}
+
+{% block title %}Статистика · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="stats-page">
+  <header class="stats-head">
+    <div>
+      <h1>Статистика</h1>
+      <p>Считаем по датам смен, не по часам ноутбука.</p>
+    </div>
+    <div class="segs">
+      <a class="seg {% if period == 'this' %}is-on{% endif %}" href="{% url 'pos:stats' %}?period=this">Эта смена</a>
+      <a class="seg {% if period == '7' %}is-on{% endif %}" href="{% url 'pos:stats' %}?period=7">7 смен</a>
+      <a class="seg {% if period == '30' %}is-on{% endif %}" href="{% url 'pos:stats' %}?period=30">30 смен</a>
+      <a class="seg {% if period == 'all' %}is-on{% endif %}" href="{% url 'pos:stats' %}?period=all">Всё время</a>
+      <form class="seg-range {% if period == 'range' %}is-on{% endif %}" method="get" action="{% url 'pos:stats' %}">
+        <input type="date" name="from" value="{% if date_from %}{{ date_from|date:'Y-m-d' }}{% endif %}" aria-label="Дата с">
+        <span>–</span>
+        <input type="date" name="to" value="{% if date_to %}{{ date_to|date:'Y-m-d' }}{% endif %}" aria-label="Дата по">
+        <button type="submit" class="seg-go">Показать</button>
+      </form>
+    </div>
+  </header>
+
+  <section class="kpi-grid">
+    <article class="kpi">
+      <div class="label">Выдано заказов</div>
+      <div class="value good">{{ stats.issued }}</div>
+      <div class="hint">статус «Готово»</div>
+    </article>
+    <article class="kpi">
+      <div class="label">Средний чек</div>
+      <div class="value">{{ stats.avg|rub }}</div>
+      <div class="hint">выручка / выданные</div>
+    </article>
+    <article class="kpi">
+      <div class="label">Выручка</div>
+      <div class="value">{{ stats.revenue|rub }}</div>
+      <div class="hint">включая допы{% if stats.addon_revenue %} · {{ stats.addon_revenue|rub }}{% endif %}</div>
+    </article>
+    <article class="kpi">
+      <div class="label">Отменено</div>
+      <div class="value bad">{{ stats.cancelled }}</div>
+      <div class="hint">не входят в выручку</div>
+    </article>
+  </section>
+
+  <div class="stats-grid">
+    <section class="panel">
+      <header class="panel-head">
+        <h2>По позициям</h2>
+        <span>топ по штукам · гап = сорт. по выручке</span>
+      </header>
+      {% if stats.items %}
+        <ul class="bar-list">
+          {% for row in stats.items %}
+            <li>
+              <span class="bar-name">{{ row.name }}</span>
+              <span class="bar-track"><span class="bar-fill" style="width: {{ row.width }}%; background: {{ row.color }}"></span></span>
+              <span class="bar-qty">{{ row.qty }} шт</span>
+              <span class="bar-money">{{ row.revenue|rub }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted stats-empty">За эту выборку выданных позиций ещё нет.</p>
+      {% endif %}
+    </section>
+
+    <div class="stats-side">
+      <section class="panel">
+        <header class="panel-head">
+          <h2>По тегам</h2>
+          <span>доля выручки</span>
+        </header>
+        {% if stats.categories %}
+          <div class="share-bar" aria-hidden="true">
+            {% for cat in stats.categories %}
+              <span style="width: {{ cat.share }}%; background: {{ cat.color }}"></span>
+            {% endfor %}
+          </div>
+          <ul class="legend">
+            {% for cat in stats.categories %}
+              <li><i style="background: {{ cat.color }}"></i>{{ cat.name }} · {{ cat.share }}% · {{ cat.qty }} шт</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted stats-empty">Категории появятся вместе с заказами смены.</p>
+        {% endif %}
+      </section>
+
+      <section class="panel">
+        <header class="panel-head">
+          <h2>Популярные допы</h2>
+          <span>сколько раз выбрали</span>
+        </header>
+        {% if stats.addons %}
+          <ul class="addon-list">
+            {% for row in stats.addons %}
+              <li><span>+ {{ row.name }}</span><b>{{ row.qty }}</b></li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted stats-empty">Допы за эту выборку не выбирали.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <p class="csv-row">
+    <a class="btn" href="{% url 'pos:stats_csv' %}?{{ request.GET.urlencode }}">↓ Выгрузить CSV</a>
+    <span class="muted">Всё считается локально из базы на ноуте, интернет не нужен.</span>
+  </p>
+</div>
+{% endblock %}

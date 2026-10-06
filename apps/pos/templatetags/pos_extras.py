@@ -12,6 +12,10 @@ _MONTHS = (
     "янв", "фев", "мар", "апр", "май", "июн",
     "июл", "авг", "сен", "окт", "ноя", "дек",
 )
+_MONTHS_GENITIVE = (
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
 
 
 def _as_decimal(value) -> Decimal:
@@ -23,9 +27,27 @@ def _as_decimal(value) -> Decimal:
 def _plain(value) -> str:
     amount = _as_decimal(value)
     if amount == amount.to_integral():
-        return str(int(amount))
-    text = f"{amount:.2f}".rstrip("0").rstrip(".")
-    return text
+        text = str(int(amount))
+    else:
+        text = f"{amount:.2f}".rstrip("0").rstrip(".")
+    return _group_digits(text)
+
+
+def _group_digits(text: str) -> str:
+    """Разбить целую часть пробелами: ``38400`` → ``38 400``."""
+    sign = ""
+    if text.startswith("-"):
+        sign, text = "-", text[1:]
+    if "." in text:
+        whole, frac = text.split(".", 1)
+        frac = "." + frac
+    else:
+        whole, frac = text, ""
+    parts: list[str] = []
+    while whole:
+        parts.append(whole[-3:])
+        whole = whole[:-3]
+    return sign + " ".join(reversed(parts)) + frac
 
 
 @register.filter(name="line_subtotal")
@@ -54,6 +76,14 @@ def rub_delta(value) -> str:
 def js_number(value) -> str:
     """Число с точкой для атрибутов, без локализации."""
     return format(_as_decimal(value), "f")
+
+
+@register.filter(name="ru_date")
+def ru_date(value) -> str:
+    """Длинная дата без часов: ``5 октября 2026``."""
+    if value is None or not getattr(value, "month", None):
+        return ""
+    return f"{value.day} {_MONTHS_GENITIVE[value.month - 1]} {value.year}"
 
 
 @register.filter(name="shift_chip")
