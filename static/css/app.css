@@ -37,7 +37,7 @@ html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--ink);
-  font-size: 14.5px;
+  font-size: 16px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -45,8 +45,8 @@ body {
 
 h1, h2, h3 { margin: 0 0 .5em; font-weight: 600; letter-spacing: -0.005em; }
 h1 { font-size: 22px; }
-h2 { font-size: 17px; }
-h3 { font-size: 15px; }
+h2 { font-size: 20px; }
+h3 { font-size: 18px; }
 small { color: var(--ink-muted); }
 .muted { color: var(--ink-muted); }
 .error { color: var(--danger); }
@@ -88,7 +88,7 @@ code { background: #eef2f7; padding: 0 4px; border-radius: 4px; }
   border-radius: var(--radius);
   cursor: pointer;
   font-weight: 500;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.3;
   transition: background .12s ease, box-shadow .12s ease, transform .05s ease;
 }
@@ -102,7 +102,7 @@ code { background: #eef2f7; padding: 0 4px; border-radius: 4px; }
 }
 .btn-primary:hover { background: var(--brand-strong); }
 .btn-primary[disabled] { opacity: .5; cursor: not-allowed; box-shadow: none; }
-.btn-lg { padding: 12px 20px; font-size: 15px; border-radius: 10px; font-weight: 600; }
+.btn-lg { padding: 12px 20px; font-size: 18px; border-radius: 10px; font-weight: 600; }
 .btn-ghost {
   background: transparent;
   border-color: transparent;
@@ -166,7 +166,7 @@ code { background: #eef2f7; padding: 0 4px; border-radius: 4px; }
   text-decoration: none;
   color: #1f242e;
   font-weight: 400;
-  font-size: 13px;
+  font-size: 16px;
   transition: background .12s ease, color .12s ease;
 }
 .nav-link:hover { background: #f5f7fa; }
@@ -388,7 +388,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   cursor: pointer;
   text-align: left;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--ink);
   position: relative;
   padding-left: 18px;
@@ -465,7 +465,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .product-tile:active { transform: translateY(1px); }
 .p-name {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.25;
   white-space: normal;
   word-wrap: break-word;
@@ -496,7 +496,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .order-meta { gap: 10px; }
 .order-meta label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-muted); }
 .order-meta input, .order-meta textarea {
-  padding: 9px 11px; border: 1px solid var(--divider); border-radius: 8px; font-size: 14px;
+  padding: 9px 11px; border: 1px solid var(--divider); border-radius: 8px; font-size: 16px;
   font-family: inherit; color: var(--ink); background: var(--panel);
   transition: border-color .12s ease, box-shadow .12s ease;
 }
@@ -712,7 +712,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .form-card textarea,
 .form-card select {
   padding: 9px 11px; border: 1px solid var(--divider); border-radius: 8px;
-  font-size: 14px; font-family: inherit; color: var(--ink); background: var(--panel);
+  font-size: 16px; font-family: inherit; color: var(--ink); background: var(--panel);
   transition: border-color .12s ease, box-shadow .12s ease;
 }
 .form-card input:focus, .form-card textarea:focus, .form-card select:focus {
@@ -728,7 +728,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .form-card label > div[id] > div { display: contents; }
 .form-card label > div[id] > div > label {
   display: inline-flex; flex-direction: row; align-items: center; gap: 8px;
-  font-size: 14px; color: var(--ink); font-weight: 500;
+  font-size: 16px; color: var(--ink); font-weight: 500;
   padding: 6px 12px; border: 1px solid var(--divider); border-radius: 999px;
   background: var(--panel-alt); cursor: pointer;
   margin: 0;
@@ -813,12 +813,12 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .pay-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 700;
+  padding: 1px 6px;
+  font-size: 16px;
+  line-height: 1.2;
   background: #faebeb;
-  color: #c74747;
   white-space: nowrap;
 }
 .q-card-cancelled .q-name { color: #737a8c; }
@@ -847,6 +847,16 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .status-in_progress { background: #fff2d9; color: #8c590d; }
 .status-ready { background: #e0f5e5; color: #38a866; }
 .status-cancelled { background: #faebeb; color: #c74747; }
+.q-lines {
+  list-style: disc;
+  margin: 0;
+  padding: 0 0 0 1.15em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.q-lines .q-item::marker { color: #1f242e; }
+.q-card-cancelled .q-lines .q-item::marker { color: #737a8c; }
 .q-item { display: flex; flex-direction: column; gap: 2px; }
 .q-item-row {
   display: flex;
@@ -932,7 +942,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 }
 .menu-panel .product-tile:hover { background: #2464b8; }
 .menu-panel .p-name {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.2;
   color: #fff;
@@ -964,7 +974,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   border: none;
   background: transparent;
   padding: 10px 0;
-  font-size: 14px;
+  font-size: 16px;
   font-family: inherit;
   color: #1f242e;
   min-width: 0;
@@ -1008,7 +1018,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   font-family: inherit;
   color: inherit;
 }
-.cart-name { font-size: 14px; font-weight: 600; }
+.cart-name { font-size: 16px; font-weight: 600; }
 .cart-addon { color: #737a8c; font-size: 12px; }
 .qty-pill {
   display: inline-flex;
@@ -1024,7 +1034,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   border: none;
   background: transparent;
   color: #1f242e;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -1188,7 +1198,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   background: #2e78d9;
   color: #fff;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 16px;
   font-family: inherit;
   border-radius: 10px;
   padding: 12px 24px;
@@ -1290,7 +1300,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   margin-bottom: 12px;
   font-size: 13.5px;
 }
-.shift-warn strong { font-size: 14.5px; }
+.shift-warn strong { font-size: 16px; }
 .btn-soft-danger {
   background: #fdecee;
   color: #e14b4b;
@@ -1434,7 +1444,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   justify-content: space-between;
   gap: 12px;
   padding: 7px 0;
-  font-size: 14px;
+  font-size: 16px;
 }
 .addon-list b { font-weight: 700; }
 .stats-empty { margin: 12px 0 4px; }
@@ -1490,7 +1500,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   border-radius: 10px;
   color: #1f242e;
   text-decoration: none;
-  font-size: 14px;
+  font-size: 16px;
 }
 .side-row span, .side-link { display: flex; align-items: center; gap: 8px; }
 .side-row i {

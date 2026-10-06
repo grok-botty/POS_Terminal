@@ -156,7 +156,11 @@ class RegisterScreenTests(TestCase):
         unpaid = Order.objects.get(guest_name="Квакша")
         self.assertEqual(unpaid.unpaid_label(), "не оплачено")
         queue = self.client.get(reverse("pos:queue_fragment"))
-        self.assertContains(queue, "не оплачено")
+        self.assertContains(queue, "💸")
+        self.assertContains(queue, 'title="не оплачено"')
+        self.assertContains(queue, 'aria-label="не оплачено"')
+        self.assertContains(queue, 'class="q-lines"')
+        self.assertNotContains(queue, ">не оплачено<")
         self.assertContains(queue, "Не готово")
         self.assertContains(queue, "event.stopPropagation()")
 
@@ -172,6 +176,7 @@ class RegisterScreenTests(TestCase):
         self.assertEqual(unpaid.barista_label(), "Готово")
         self.assertEqual(unpaid.unpaid_label(), "")
         queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertNotContains(queue, "💸")
         self.assertNotContains(queue, "не оплачено")
         self.assertContains(queue, "Готово")
 
@@ -222,7 +227,8 @@ class RegisterScreenTests(TestCase):
         self.assertTrue(order.is_paid)
         self.assertEqual(order.status, Order.Status.IN_PROGRESS)
         queue = self.client.get(reverse("pos:queue_fragment"))
-        self.assertEqual(queue.content.decode().count("не оплачено"), 1)
+        self.assertEqual(queue.content.decode().count("💸"), 1)
+        self.assertEqual(queue.content.decode().count("не оплачено"), 2)
 
         self.client.get(reverse("pos:queue_open", args=[order.id]))
         released = self.client.post(reverse("pos:order_discard"))

@@ -19,7 +19,7 @@
         <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
         <span class="q-pills">
           {% if not order.is_paid %}
-            <span class="pay-pill">не оплачено</span>
+            <span class="pay-pill" title="не оплачено" aria-label="не оплачено">💸</span>
           {% endif %}
           <button type="button"
                   class="status-pill status-{{ order.status }}"
@@ -32,18 +32,20 @@
           </button>
         </span>
       </header>
-      {% for line in order.lines.all %}
-        <div class="q-item">
-          <div class="q-item-row">
-            <span>{{ line.name_snapshot }}</span>
-            {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
-          </div>
-          {% for addon in line|visible_addons %}
-            <p class="q-addon">+ {{ addon.name_snapshot }}{% if addon.price_delta_snapshot %} {{ addon.price_delta_snapshot|rub_delta }}{% endif %}</p>
-          {% endfor %}
-          {% if line.note %}<p class="q-addon">{{ line.note }}</p>{% endif %}
-        </div>
-      {% endfor %}
+      <ul class="q-lines">
+        {% for line in order.lines.all %}
+          <li class="q-item">
+            <div class="q-item-row">
+              <span>{{ line.name_snapshot }}</span>
+              {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
+            </div>
+            {% for addon in line|visible_addons %}
+              <p class="q-addon">+ {{ addon.name_snapshot }}{% if addon.price_delta_snapshot %} {{ addon.price_delta_snapshot|rub_delta }}{% endif %}</p>
+            {% endfor %}
+            {% if line.note %}<p class="q-addon">{{ line.note }}</p>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
       {% if order.comment %}
         <p class="q-comment">💬 {{ order.comment }}</p>
       {% endif %}
