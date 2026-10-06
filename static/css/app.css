@@ -1185,6 +1185,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   min-height: calc(100vh - 48px);
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   padding: 72px 16px 40px;
 }
 .shift-card {
@@ -1274,9 +1275,10 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 }
 .shift-actions { display: flex; flex-direction: column; gap: 10px; }
 .btn-close-confirm {
-  background: #e23d3d;
+  background: #d32f2f;
   color: #fff;
   border: none;
+  transition: none;
 }
 .btn-close-confirm:hover { background: #c62828; color: #fff; }
 .btn-close-confirm[disabled] {
