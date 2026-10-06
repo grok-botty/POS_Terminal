@@ -55,6 +55,7 @@ class RegisterScreenTests(TestCase):
         self.assertContains(response, "Очередь")
         self.assertContains(response, "клик меняет статус")
         self.assertContains(response, ">Все<")
+        self.assertContains(response, 'id="menu-search"')
         self.assertContains(response, "—— Классика ——")
         self.assertContains(response, "—— Еда ——")
         self.assertContains(response, "допы →")
@@ -64,6 +65,41 @@ class RegisterScreenTests(TestCase):
         order = Order.objects.get(status=Order.Status.NEW)
         self.assertIn(order.guest_name, FUNNY_GUESTS)
         self.assertContains(response, order.guest_name)
+
+    def test_menu_search_filters_tiles_by_name_inside_the_tag(self):
+        url = reverse("pos:products_grid")
+        narrowed = self.client.get(url, {"q": "лат"})
+        self.assertContains(narrowed, "Латте")
+        self.assertNotContains(narrowed, "Эспрессо")
+        self.assertNotContains(narrowed, "Круассан")
+        self.assertContains(narrowed, reverse("pos:modifier_picker", args=[self.latte.id]))
+
+        upper = self.client.get(url, {"q": "ЭСПР"})
+        self.assertContains(upper, "Эспрессо")
+        self.assertContains(upper, reverse("pos:add_line", args=[self.espresso.id]))
+        self.assertNotContains(upper, "Латте")
+
+        tagged = self.client.get(url, {"q": "лат", "category": self.food.id})
+        self.assertNotContains(tagged, "Латте")
+        self.assertContains(tagged, "Ничего не найдено")
+
+        in_tag = self.client.get(url, {"q": "кру", "category": self.food.id})
+        self.assertContains(in_tag, "Круассан")
+        self.assertNotContains(in_tag, "Эспрессо")
+
+        cleared = self.client.get(
+            url, {"q": "   ", "category": self.cat.id}
+        )
+        self.assertContains(cleared, "Латте")
+        self.assertContains(cleared, "Эспрессо")
+        self.assertNotContains(cleared, "Круассан")
+
+        body = self.client.get(
+            url, {"q": "лат"}, HTTP_HX_TARGET="menu-body"
+        )
+        self.assertContains(body, "Латте")
+        self.assertNotContains(body, 'id="menu-search"')
+        self.assertNotContains(body, "menu-tab")
 
     def test_item_without_addons_is_one_tap(self):
         self.client.get(reverse("pos:register"))

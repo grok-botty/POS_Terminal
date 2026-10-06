@@ -908,14 +908,37 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 
 .menu-panel {
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 16px 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   background: #f5f7fa;
 }
-.menu-tabs { display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; }
+.menu-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.menu-tabs { display: flex; gap: 8px; overflow-x: auto; flex: 1 1 auto; min-width: 0; }
+.menu-search {
+  flex: 0 1 200px;
+  width: 200px;
+  min-width: 120px;
+  height: 40px;
+  border: 1px solid #dbe0eb;
+  background: #fff;
+  color: #1f242e;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 16px;
+  font-family: inherit;
+}
+.menu-search:focus {
+  outline: 2px solid #2e78d9;
+  border-color: #2e78d9;
+}
 .menu-tab {
   border: 1px solid #dbe0eb;
   background: #fff;
@@ -933,7 +956,14 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   border-color: #2e78d9;
   color: #fff;
 }
-.menu-body { display: flex; flex-direction: column; gap: 10px; }
+.menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  flex: 1 1 auto;
+}
 .menu-section {
   display: flex;
   align-items: center;

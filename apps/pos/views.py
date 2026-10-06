@@ -207,7 +207,14 @@ def _active_products():
     )
 
 
-def _menu_context(active_category: Category | None = None) -> dict:
+def _menu_context(active_category: Category | None = None, query: str = "") -> dict:
+    """Секции меню с учётом вкладки и подстроки названия.
+
+    Сравнение через ``casefold``: SQLite ``LIKE`` не считает кириллицу
+    без регистра, а касса ищет «латте» и «Латте» одинаково.
+    """
+    needle = (query or "").strip()
+    folded = needle.casefold()
     categories = list(Category.objects.filter(is_active=True))
     section_qs = Category.objects.filter(is_active=True).order_by("order", "name")
     if active_category is not None:
@@ -215,13 +222,30 @@ def _menu_context(active_category: Category | None = None) -> dict:
     section_qs = section_qs.prefetch_related(
         Prefetch("products", queryset=_active_products())
     )
-    sections = [cat for cat in section_qs if cat.products.all()]
+    sections = []
+    for cat in section_qs:
+        products = list(cat.products.all())
+        if folded:
+            products = [item for item in products if folded in item.name.casefold()]
+        if not products:
+            continue
+        cat.filtered_products = products
+        sections.append(cat)
     return {
         "categories": categories,
         "active_category": active_category,
         "sections": sections,
         "show_section_headers": active_category is None,
+        "query": needle,
     }
+
+
+def _menu_request_context(request: HttpRequest) -> dict:
+    category_id = request.GET.get("category")
+    category = None
+    if category_id and str(category_id).isdigit():
+        category = get_object_or_404(Category, pk=category_id, is_active=True)
+    return _menu_context(category, request.GET.get("q", ""))
 
 
 def _picker_context(product: Product, *, selected_ids: set[int] | None, line=None) -> dict:
@@ -271,11 +295,7 @@ def _redirect_register() -> HttpResponse:
 @open_shift_required
 def register(request: HttpRequest) -> HttpResponse:
     """Полная страница кассы (первичная загрузка)."""
-    category_id = request.GET.get("category")
-    category = None
-    if category_id and category_id.isdigit():
-        category = get_object_or_404(Category, pk=category_id, is_active=True)
-    context = _menu_context(category)
+    context = _menu_request_context(request)
     context["order"] = _reload_order(_get_or_create_current_order(request))
     context.update(_queue_context(request))
     return render(request, "pos/register.html", context)
@@ -373,12 +393,15 @@ def order_panel(request: HttpRequest) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @open_shift_required
 def products_grid(request: HttpRequest) -> HttpResponse:
-    """HTMX-цель: переключить категорию без полной перезагрузки страницы."""
-    category_id = request.GET.get("category")
-    category = None
-    if category_id and category_id.isdigit():
-        category = get_object_or_404(Category, pk=category_id, is_active=True)
-    return render(request, "pos/_menu.html", _menu_context(category))
+    """HTMX-цель: вкладка или поиск по названию без полной перезагрузки.
+
+    Поиск меняет только сетку (``HX-Target: menu-body``), чтобы поле ввода
+    не теряло фокус. Вкладка заменяет всю колонку и забирает текущий ``q``.
+    """
+    context = _menu_request_context(request)
+    if request.headers.get("HX-Target") == "menu-body":
+        return render(request, "pos/_menu_body.html", context)
+    return render(request, "pos/_menu.html", context)
 
 
 @login_required(login_url="accounts:login")
