@@ -98,10 +98,10 @@
   <form hx-post="{% url 'pos:order_pay' %}" hx-include="#order-fields" hx-swap="none">
     {% csrf_token %}
     {% if order.is_paid %}
-      <button type="button" class="pay-btn" disabled>Оплачено</button>
+      <button type="button" class="pay-btn is-paid" disabled>Оплачено</button>
     {% else %}
       <button type="submit" class="pay-btn" {% if not order.lines.all %}disabled{% endif %}>
-        Оплатить · 1 клик
+        Оплачено
       </button>
     {% endif %}
   </form>

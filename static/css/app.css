@@ -1099,15 +1099,23 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   height: 48px;
   border: none;
   border-radius: 10px;
-  background: #2e78d9;
+  background: var(--success);
   color: #fff;
   font-size: 15px;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
 }
-.pay-btn:hover { background: #2464b8; }
+.pay-btn:hover { background: #1b5e20; }
 .pay-btn:disabled, .ghost-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.pay-btn.is-paid,
+.pay-btn.is-paid:disabled,
+.pay-btn.is-paid:hover {
+  opacity: 1;
+  cursor: default;
+  background: var(--success);
+  color: #fff;
+}
 .cart-secondary { display: flex; gap: 8px; }
 .cart-secondary form { flex: 1; }
 .ghost-btn {
