@@ -8,9 +8,12 @@
 
 1. Кассир собирает :class:`Order` из позиций :class:`OrderLine` и,
    опционально, привязывает к каждой позиции :class:`OrderLineModifier`.
-2. Когда гость оплачивает заказ, :attr:`Order.is_paid` становится
-   ``True``, а сам заказ попадает в кухонную очередь (``IN_PROGRESS``).
-3. Бариста помечает заказ :attr:`Order.Status.READY`. Кассир выдаёт его
+2. «В очередь» ставит заказ в работу (``IN_PROGRESS``), не меняя
+   :attr:`Order.is_paid`. На карточке это «не оплачено» плюс «не готово».
+   «Оплатить» ставит :attr:`Order.is_paid` и тоже отправляет черновик
+   в очередь, но плашка «не оплачено» не показывается.
+3. Готовность крутится отдельно: не готово → готово → отменено.
+   Оплата её не сбрасывает. Кассир выдаёт заказ
    (:attr:`Order.Status.HANDED_OFF`).
 4. В конце смены :func:`apps.orders.services.close_day` фиксирует итоги в
    :class:`apps.analytics.models.DailySummary`.
@@ -169,12 +172,21 @@ class Order(models.Model):
         return total
 
     def barista_label(self) -> str:
-        """Короткая подпись статуса для очереди баристы."""
+        """Короткая подпись готовности для очереди баристы.
+
+        Оплата сюда не входит: её показывает :meth:`unpaid_label`.
+        """
         return {
             self.Status.IN_PROGRESS: "Не готово",
             self.Status.READY: "Готово",
             self.Status.CANCELLED: "Отменено",
         }.get(self.status, self.get_status_display())
+
+    def unpaid_label(self) -> str:
+        """Плашка оплаты. Пустая строка, если заказ уже оплачен."""
+        if self.is_paid:
+            return ""
+        return "не оплачено"
 
     def is_active(self) -> bool:
         """Вернуть ``True``, если заказ должен показываться в активной очереди."""

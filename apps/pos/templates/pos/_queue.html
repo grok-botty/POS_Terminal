@@ -2,26 +2,35 @@
 <aside id="barista-queue"
        class="queue-col"
        hx-get="{% url 'pos:queue_fragment' %}"
-       hx-trigger="every 5s"
+       hx-trigger="every 5s, refreshQueue from:body"
        hx-sync="this:drop"
        hx-swap="outerHTML">
   <header class="queue-head">
     <h2>Очередь</h2>
-    <span class="queue-hint">тап по статусу</span>
+    <span class="queue-hint">карточка — править</span>
   </header>
 
   {% for order in queue %}
-    <article class="q-card q-card-{{ order.status }}">
+    <article class="q-card q-card-{{ order.status }}{% if not order.is_paid %} q-card-unpaid{% endif %}{% if current_order_id == order.id %} is-open{% endif %}"
+             hx-get="{% url 'pos:queue_open' order.id %}"
+             hx-target="#order-panel"
+             hx-swap="outerHTML">
       <header class="q-card-head">
         <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
-        <button type="button"
-                class="status-pill status-{{ order.status }}"
-                hx-post="{% url 'pos:queue_cycle' order.id %}"
-                hx-target="#barista-queue"
-                hx-sync="#barista-queue:abort"
-                hx-swap="outerHTML">
-          {{ order.barista_label }}
-        </button>
+        <span class="q-pills">
+          {% if not order.is_paid %}
+            <span class="pay-pill">не оплачено</span>
+          {% endif %}
+          <button type="button"
+                  class="status-pill status-{{ order.status }}"
+                  hx-post="{% url 'pos:queue_cycle' order.id %}"
+                  hx-target="#barista-queue"
+                  hx-sync="#barista-queue:abort"
+                  hx-swap="outerHTML"
+                  hx-on:click="event.stopPropagation()">
+            {{ order.barista_label }}
+          </button>
+        </span>
       </header>
       {% for line in order.lines.all %}
         <div class="q-item">
@@ -40,6 +49,6 @@
       {% endif %}
     </article>
   {% empty %}
-    <p class="queue-empty">Очередь пуста. Оплаченный заказ появится здесь.</p>
+    <p class="queue-empty">Очередь пуста. Заказ появится после «В очередь» или оплаты.</p>
   {% endfor %}
 </aside>

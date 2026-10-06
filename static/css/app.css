@@ -796,9 +796,12 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   display: flex;
   flex-direction: column;
   gap: 8px;
+  cursor: pointer;
 }
 .q-card-in_progress { border: 2px solid #f2b838; }
 .q-card-cancelled { opacity: 0.55; }
+.q-card-unpaid { box-shadow: inset 3px 0 0 #c74747; }
+.q-card.is-open { outline: 2px solid #2e78d9; outline-offset: 1px; }
 .q-card-head {
   display: flex;
   align-items: center;
@@ -806,8 +809,22 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   gap: 8px;
 }
 .q-name { font-weight: 700; font-size: 15px; }
+.q-pills { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pay-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #faebeb;
+  color: #c74747;
+  white-space: nowrap;
+}
 .q-card-cancelled .q-name { color: #737a8c; }
 .status-pill {
+  appearance: none;
+  -webkit-appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1056,6 +1073,12 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   align-items: baseline;
   justify-content: space-between;
   color: #1f242e;
+}
+.editing-note {
+  margin: -4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #c74747;
 }
 .cart-total span { font-size: 15px; font-weight: 600; }
 .cart-total strong { font-size: 20px; font-weight: 700; }

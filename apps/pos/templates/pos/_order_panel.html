@@ -1,6 +1,9 @@
 {% load pos_extras %}
 <aside id="order-panel" class="order-col">
   <h2>Текущий заказ</h2>
+  {% if order.status != "new" %}
+    <p class="editing-note">Из очереди{% if not order.is_paid %} · не оплачено{% else %} · оплачено{% endif %}</p>
+  {% endif %}
 
   {% if panel_error %}
     <p class="panel-error">{{ panel_error }}</p>
@@ -94,19 +97,25 @@
 
   <form hx-post="{% url 'pos:order_pay' %}" hx-include="#order-fields" hx-swap="none">
     {% csrf_token %}
-    <button type="submit" class="pay-btn" {% if not order.lines.all %}disabled{% endif %}>
-      Оплатить · 1 клик
-    </button>
+    {% if order.is_paid %}
+      <button type="button" class="pay-btn" disabled>Оплачено</button>
+    {% else %}
+      <button type="submit" class="pay-btn" {% if not order.lines.all %}disabled{% endif %}>
+        Оплатить · 1 клик
+      </button>
+    {% endif %}
   </form>
 
   <div class="cart-secondary">
     <form hx-post="{% url 'pos:order_discard' %}" hx-swap="none">
       {% csrf_token %}
-      <button type="submit" class="ghost-btn">Очистить</button>
+      <button type="submit" class="ghost-btn">{% if order.status == "new" %}Очистить{% else %}Новый чек{% endif %}</button>
     </form>
-    <form hx-post="{% url 'pos:order_enqueue' %}" hx-include="#order-fields" hx-swap="none">
-      {% csrf_token %}
-      <button type="submit" class="ghost-btn" {% if not order.lines.all %}disabled{% endif %}>В очередь</button>
-    </form>
+    {% if order.status == "new" %}
+      <form hx-post="{% url 'pos:order_enqueue' %}" hx-include="#order-fields" hx-swap="none">
+        {% csrf_token %}
+        <button type="submit" class="ghost-btn" {% if not order.lines.all %}disabled{% endif %}>В очередь</button>
+      </form>
+    {% endif %}
   </div>
 </aside>

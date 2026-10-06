@@ -417,13 +417,19 @@ def update_order_meta(
 
 @transaction.atomic
 def pay_order(order: Order) -> Order:
-    """Отметить ``order`` оплаченным и отправить в кухонную очередь."""
+    """Отметить ``order`` оплаченным.
+
+    Черновик при этом уходит в очередь («не готово»). Заказ, который
+    бариста уже двигал (готово / отменено / не готово), статус готовности
+    не теряет — гаснет только плашка «не оплачено».
+    """
     if not order.lines.exists():
         raise ValueError("Нельзя оплатить пустой заказ.")
     if order.is_paid:
         return order
     order.is_paid = True
-    order.status = Order.Status.IN_PROGRESS
+    if order.status == Order.Status.NEW:
+        order.status = Order.Status.IN_PROGRESS
     order.paid_at = timezone.now()
     _attach_open_shift(order)
     order.save(update_fields=["is_paid", "status", "paid_at", "shift"])
@@ -434,8 +440,9 @@ def pay_order(order: Order) -> Order:
 def enqueue_order(order: Order) -> Order:
     """Отправить черновик баристе, не отмечая оплату.
 
-    Заказ появляется в левой очереди со статусом «Не готово». Если открыта
-    смена, заказ привязывается к её дате.
+    Заказ появляется в левой очереди как «Не готово» и «не оплачено».
+    Если открыта смена, заказ привязывается к её дате. Уже оплаченный
+    заказ не трогаем.
     """
     if not order.lines.exists():
         raise ValueError("Нельзя отправить пустой заказ.")

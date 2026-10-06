@@ -12,6 +12,7 @@ urlpatterns = [
     path("stats/export/", views.stats_csv, name="stats_csv"),
     path("panel/", views.order_panel, name="order_panel"),
     path("queue/", views.queue_fragment, name="queue_fragment"),
+    path("queue/<int:pk>/", views.queue_open, name="queue_open"),
     path("queue/<int:pk>/cycle/", views.queue_cycle, name="queue_cycle"),
     path("products/", views.products_grid, name="products_grid"),
     path("products/<int:product_id>/pick/", views.modifier_picker, name="modifier_picker"),

@@ -28,6 +28,14 @@ from apps.orders.models import Order, OrderLine
 
 SESSION_ORDER_KEY = "current_order_id"
 
+# Черновик и всё, что ещё лежит в очереди кассы. «Отдан» уже не правится.
+EDITABLE_STATUSES = (
+    Order.Status.NEW,
+    Order.Status.IN_PROGRESS,
+    Order.Status.READY,
+    Order.Status.CANCELLED,
+)
+
 FUNNY_GUESTS = (
     "Безымянный енот",
     "Таинственный бобёр",
@@ -95,22 +103,66 @@ _BAR_COLORS = (
 # Помощники
 # ---------------------------------------------------------------------------
 
-def _get_or_create_current_order(request: HttpRequest) -> Order:
-    """Вернуть черновик заказа кассира, создав его при необходимости."""
+def _session_order(request: HttpRequest) -> Order | None:
+    """Заказ, открытый в правой колонке, если его ещё можно править."""
     order_id = request.session.get(SESSION_ORDER_KEY)
-    if order_id:
-        try:
-            order = Order.objects.get(pk=order_id)
-            if order.status == Order.Status.NEW and not order.is_paid:
-                return order
-        except Order.DoesNotExist:
-            pass
+    if not order_id:
+        return None
+    try:
+        order = Order.objects.get(pk=order_id)
+    except Order.DoesNotExist:
+        return None
+    if order.status not in EDITABLE_STATUSES:
+        return None
+    return order
+
+
+def _get_or_create_current_order(request: HttpRequest) -> Order:
+    """Вернуть заказ правой колонки: черновик или открытую карточку очереди."""
+    order = _session_order(request)
+    if order is not None:
+        return order
     order = order_services.create_order(
         created_by=request.user,
         guest_name=funny_guest_name(),
     )
     request.session[SESSION_ORDER_KEY] = order.id
     return order
+
+
+def _park_current_draft(request: HttpRequest) -> None:
+    """Убрать с панели чужой черновик, не выбрасывая уже набранные позиции.
+
+    Пустой черновик удаляется. Черновик с позициями сам уходит в очередь
+    как неоплаченный — отдельного подтверждения нет. Заказ, который уже
+    стоит в очереди, не трогаем: имя, комментарий и строки пишутся сразу.
+    """
+    order = _session_order(request)
+    if order is None or order.status != Order.Status.NEW or order.is_paid:
+        return
+    if order.lines.exists():
+        order_services.enqueue_order(order)
+    else:
+        order.delete()
+
+
+def _line_on_panel(request: HttpRequest, line_id: int) -> OrderLine:
+    """Позиция только того заказа, который сейчас открыт справа."""
+    order = _get_or_create_current_order(request)
+    return get_object_or_404(OrderLine, pk=line_id, order=order)
+
+
+def _queue_context(request: HttpRequest) -> dict:
+    return {
+        "queue": order_services.barista_queue(),
+        "current_order_id": request.session.get(SESSION_ORDER_KEY),
+    }
+
+
+def _refresh_queue(response: HttpResponse) -> HttpResponse:
+    """Попросить левую колонку перерисоваться после правки открытого заказа."""
+    response["HX-Trigger"] = "refreshQueue"
+    return response
 
 
 def _forget_current_order(request: HttpRequest) -> None:
@@ -206,7 +258,7 @@ def register(request: HttpRequest) -> HttpResponse:
         category = get_object_or_404(Category, pk=category_id, is_active=True)
     context = _menu_context(category)
     context["order"] = _reload_order(_get_or_create_current_order(request))
-    context["queue"] = order_services.barista_queue()
+    context.update(_queue_context(request))
     return render(request, "pos/register.html", context)
 
 
@@ -302,11 +354,23 @@ def products_grid(request: HttpRequest) -> HttpResponse:
 @open_shift_required
 def queue_fragment(request: HttpRequest) -> HttpResponse:
     """Левая колонка очереди — для цикла статуса и периодического обновления."""
-    return render(
-        request,
-        "pos/_queue.html",
-        {"queue": order_services.barista_queue()},
-    )
+    return render(request, "pos/_queue.html", _queue_context(request))
+
+
+@login_required(login_url="accounts:login")
+@open_shift_required
+@require_http_methods(["GET"])
+def queue_open(request: HttpRequest, pk: int) -> HttpResponse:
+    """Открыть карточку очереди в правой колонке.
+
+    Неоплаченный черновик с позициями перед этим сам встаёт в очередь,
+    чтобы тап по чужому заказу его не стёр.
+    """
+    target = get_object_or_404(Order, pk=pk, status__in=EDITABLE_STATUSES)
+    if request.session.get(SESSION_ORDER_KEY) != target.id:
+        _park_current_draft(request)
+        request.session[SESSION_ORDER_KEY] = target.id
+    return _refresh_queue(_order_panel(request, target))
 
 
 # ---------------------------------------------------------------------------
@@ -365,8 +429,7 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
     line = get_object_or_404(
         OrderLine.objects.select_related("product", "order"),
         pk=line_id,
-        order__status=Order.Status.NEW,
-        order__is_paid=False,
+        order=_get_or_create_current_order(request),
     )
     if request.method == "GET":
         selected = set(line.modifiers.values_list("modifier_id", flat=True))
@@ -393,7 +456,10 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
         resp["HX-Reswap"] = "innerHTML"
         resp["HX-Keep-Picker"] = "1"
         return resp
-    return _order_panel(request, line.order)
+    response = _order_panel(request, line.order)
+    if line.order.status != Order.Status.NEW:
+        return _refresh_queue(response)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -404,30 +470,30 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
 @open_shift_required
 @require_http_methods(["POST"])
 def line_inc(request: HttpRequest, line_id: int) -> HttpResponse:
-    line = get_object_or_404(OrderLine, pk=line_id, order__status=Order.Status.NEW)
+    line = _line_on_panel(request, line_id)
     _apply_posted_meta(request, line.order)
     order_services.change_line_quantity(line, line.quantity + 1)
-    return order_panel(request)
+    return _refresh_queue(order_panel(request))
 
 
 @login_required(login_url="accounts:login")
 @open_shift_required
 @require_http_methods(["POST"])
 def line_dec(request: HttpRequest, line_id: int) -> HttpResponse:
-    line = get_object_or_404(OrderLine, pk=line_id, order__status=Order.Status.NEW)
+    line = _line_on_panel(request, line_id)
     _apply_posted_meta(request, line.order)
     order_services.change_line_quantity(line, line.quantity - 1)
-    return order_panel(request)
+    return _refresh_queue(order_panel(request))
 
 
 @login_required(login_url="accounts:login")
 @open_shift_required
 @require_http_methods(["POST"])
 def line_remove(request: HttpRequest, line_id: int) -> HttpResponse:
-    line = get_object_or_404(OrderLine, pk=line_id, order__status=Order.Status.NEW)
+    line = _line_on_panel(request, line_id)
     _apply_posted_meta(request, line.order)
     order_services.remove_line(line)
-    return order_panel(request)
+    return _refresh_queue(order_panel(request))
 
 
 # ---------------------------------------------------------------------------
@@ -455,7 +521,10 @@ def order_meta(request: HttpRequest) -> HttpResponse:
         comment=request.POST.get("comment") if "comment" in request.POST else None,
         fulfilment=fulfilment,
     )
-    return HttpResponse(status=204)
+    response = HttpResponse(status=204)
+    if order.status != Order.Status.NEW:
+        return _refresh_queue(response)
+    return response
 
 
 @login_required(login_url="accounts:login")
@@ -492,7 +561,11 @@ def order_enqueue(request: HttpRequest) -> HttpResponse:
 @open_shift_required
 @require_http_methods(["POST"])
 def order_discard(request: HttpRequest) -> HttpResponse:
-    """Удалить текущий черновик заказа и открыть свежий."""
+    """Закрыть правую колонку.
+
+    Черновик без оплаты удаляется. Заказ из очереди остаётся в очереди:
+    кнопка для него подписана «Новый чек» и только отпускает панель.
+    """
     order_id = request.session.get(SESSION_ORDER_KEY)
     if order_id:
         Order.objects.filter(

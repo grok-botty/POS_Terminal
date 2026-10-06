@@ -146,6 +146,100 @@ class RegisterScreenTests(TestCase):
         self.assertEqual(order.status, Order.Status.IN_PROGRESS)
         self.assertEqual(order.comment, "оба больших")
 
+    def test_queue_shows_unpaid_until_the_order_is_paid(self):
+        self.client.get(reverse("pos:register"))
+        self.client.post(reverse("pos:add_line", args=[self.espresso.id]))
+        self.client.post(
+            reverse("pos:order_enqueue"),
+            data={"guest_name": "Квакша"},
+        )
+        unpaid = Order.objects.get(guest_name="Квакша")
+        self.assertEqual(unpaid.unpaid_label(), "не оплачено")
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertContains(queue, "не оплачено")
+        self.assertContains(queue, "Не готово")
+        self.assertContains(queue, "event.stopPropagation()")
+
+        services.cycle_barista_status(unpaid)
+        unpaid.refresh_from_db()
+        self.assertEqual(unpaid.status, Order.Status.READY)
+        self.assertFalse(unpaid.is_paid)
+
+        services.pay_order(unpaid)
+        unpaid.refresh_from_db()
+        self.assertTrue(unpaid.is_paid)
+        self.assertEqual(unpaid.status, Order.Status.READY)
+        self.assertEqual(unpaid.barista_label(), "Готово")
+        self.assertEqual(unpaid.unpaid_label(), "")
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertNotContains(queue, "не оплачено")
+        self.assertContains(queue, "Готово")
+
+    def test_open_queue_card_loads_and_edits_the_right_panel(self):
+        order = services.create_order(
+            guest_name="Маша", fulfilment=Order.Fulfilment.TO_GO
+        )
+        services.update_order_meta(order, comment="без сахара")
+        services.add_line(
+            order, self.latte, quantity=2, modifier_ids=[self.oat.id]
+        )
+        services.enqueue_order(order)
+
+        self.client.get(reverse("pos:register"))
+        self.client.post(reverse("pos:add_line", args=[self.croissant.id]))
+        draft = Order.objects.get(status=Order.Status.NEW)
+
+        response = self.client.get(reverse("pos:queue_open", args=[order.id]))
+        self.assertContains(response, "Маша")
+        self.assertContains(response, "без сахара")
+        self.assertContains(response, "Латте")
+        self.assertContains(response, "+ овсяное +30₽")
+        self.assertContains(response, "Из очереди")
+        self.assertContains(response, "не оплачено")
+        self.assertContains(response, "Новый чек")
+        self.assertContains(response, 'name="to_go" checked')
+        self.assertContains(response, ">2<")
+        self.assertNotContains(response, "В очередь")
+
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, Order.Status.IN_PROGRESS)
+        self.assertFalse(draft.is_paid)
+
+        line = order.lines.get()
+        edited = self.client.post(reverse("pos:line_inc", args=[line.id]))
+        self.assertContains(edited, ">3<")
+        line.refresh_from_db()
+        self.assertEqual(line.quantity, 3)
+
+        sheet = self.client.get(reverse("pos:line_edit", args=[line.id]))
+        self.assertContains(sheet, "Латте · допы")
+
+        self.client.post(
+            reverse("pos:order_pay"),
+            data={"guest_name": "Маша", "comment": "без сахара"},
+        )
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertEqual(queue.content.decode().count("не оплачено"), 1)
+
+        self.client.get(reverse("pos:queue_open", args=[order.id]))
+        released = self.client.post(reverse("pos:order_discard"))
+        self.assertEqual(released.status_code, 204)
+        self.assertTrue(Order.objects.filter(pk=order.id).exists())
+
+    def test_empty_draft_is_dropped_when_a_queue_card_opens(self):
+        self.client.get(reverse("pos:register"))
+        empty = Order.objects.get(status=Order.Status.NEW)
+        order = services.create_order(guest_name="Аня")
+        services.add_line(order, self.espresso, quantity=1)
+        services.enqueue_order(order)
+        self.client.get(reverse("pos:queue_open", args=[order.id]))
+        self.assertFalse(Order.objects.filter(pk=empty.id).exists())
+        panel = self.client.get(reverse("pos:order_panel"))
+        self.assertContains(panel, "Аня")
+
     def test_editing_a_line_reopens_the_sheet(self):
         self.client.get(reverse("pos:register"))
         self.client.post(
