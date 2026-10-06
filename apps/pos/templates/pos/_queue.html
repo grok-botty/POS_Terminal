@@ -12,6 +12,8 @@
 
   {% for order in queue %}
     <article class="q-card q-card-{{ order.status }}{% if not order.is_paid %} q-card-unpaid{% endif %}{% if current_order_id == order.id %} is-open{% endif %}"
+             data-status="{{ order.status }}"
+             data-status-url="{% url 'pos:queue_status' order.id %}"
              hx-get="{% url 'pos:queue_open' order.id %}"
              hx-target="#order-panel"
              hx-swap="outerHTML">

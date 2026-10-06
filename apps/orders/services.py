@@ -462,19 +462,30 @@ _BARISTA_CYCLE = (
 
 
 @transaction.atomic
-def cycle_barista_status(order: Order) -> Order:
-    """Прокрутить статус очереди: не готово → готово → отменено → не готово."""
-    try:
-        index = _BARISTA_CYCLE.index(order.status)
-    except ValueError:
-        index = -1
-    order.status = _BARISTA_CYCLE[(index + 1) % len(_BARISTA_CYCLE)]
+def set_barista_status(order: Order, status: str) -> Order:
+    """Поставить готовность сразу: не готово, готово или отменено.
+
+    Оплату не меняет. Те же три значения, что у :func:`cycle_barista_status`.
+    """
+    if status not in _BARISTA_CYCLE:
+        raise ValueError("Неизвестный статус очереди.")
+    order.status = status
     if order.status == Order.Status.READY:
         order.ready_at = timezone.now()
     elif order.status == Order.Status.IN_PROGRESS:
         order.ready_at = None
     order.save(update_fields=["status", "ready_at"])
     return order
+
+
+@transaction.atomic
+def cycle_barista_status(order: Order) -> Order:
+    """Прокрутить статус очереди: не готово → готово → отменено → не готово."""
+    try:
+        index = _BARISTA_CYCLE.index(order.status)
+    except ValueError:
+        index = -1
+    return set_barista_status(order, _BARISTA_CYCLE[(index + 1) % len(_BARISTA_CYCLE)])
 
 
 @transaction.atomic

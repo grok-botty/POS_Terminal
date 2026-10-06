@@ -113,6 +113,52 @@ class RegisterScreenTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.IN_PROGRESS)
 
+    def test_context_menu_sets_readiness_without_touching_payment(self):
+        order = services.create_order(guest_name="Маша")
+        services.add_line(order, self.espresso, quantity=1)
+        services.enqueue_order(order)
+
+        response = self.client.post(
+            reverse("pos:queue_status", args=[order.id]),
+            data={"status": "cancelled"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Отменено")
+        self.assertContains(response, "💸")
+        self.assertContains(response, "data-status-url")
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+        self.assertFalse(order.is_paid)
+        self.assertIsNone(order.ready_at)
+
+        ready = self.client.post(
+            reverse("pos:queue_status", args=[order.id]),
+            data={"status": "ready"},
+        )
+        self.assertContains(ready, "Готово")
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.READY)
+        self.assertIsNotNone(order.ready_at)
+        self.assertFalse(order.is_paid)
+
+        back = self.client.post(
+            reverse("pos:queue_status", args=[order.id]),
+            data={"status": "in_progress"},
+        )
+        self.assertContains(back, "Не готово")
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertIsNone(order.ready_at)
+
+        refused = self.client.post(
+            reverse("pos:queue_status", args=[order.id]),
+            data={"status": "handed_off"},
+        )
+        self.assertEqual(refused.status_code, 400)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertFalse(order.is_paid)
+
     def test_meta_and_pay_keep_the_guest_name(self):
         self.client.get(reverse("pos:register"))
         response = self.client.post(

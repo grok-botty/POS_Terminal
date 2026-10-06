@@ -585,6 +585,19 @@ def queue_cycle(request: HttpRequest, pk: int) -> HttpResponse:
     return queue_fragment(request)
 
 
+@login_required(login_url="accounts:login")
+@open_shift_required
+@require_http_methods(["POST"])
+def queue_set_status(request: HttpRequest, pk: int) -> HttpResponse:
+    """Правый клик по карточке: поставить готовность сразу, оплату не трогать."""
+    order = get_object_or_404(Order, pk=pk)
+    try:
+        order_services.set_barista_status(order, request.POST.get("status", ""))
+    except ValueError:
+        return HttpResponse("Неизвестный статус очереди.", status=400)
+    return queue_fragment(request)
+
+
 def _posted_modifier_ids(request: HttpRequest) -> list[int]:
     """Собрать id допов: чекбоксы в ``modifiers``, радиокнопки — в ``group_<id>``."""
     ids: list[int] = []

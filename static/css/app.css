@@ -802,6 +802,36 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .q-card-cancelled { opacity: 0.55; }
 .q-card-unpaid { box-shadow: inset 3px 0 0 #c74747; }
 .q-card.is-open { outline: 2px solid #2e78d9; outline-offset: 1px; }
+.q-status-menu {
+  position: fixed;
+  z-index: 90;
+  min-width: 168px;
+  background: #fff;
+  border: 1px solid #dbe0eb;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.q-status-menu[hidden] { display: none; }
+.q-status-menu button {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #1f242e;
+}
+.q-status-menu button:hover,
+.q-status-menu button:focus { background: #f5f7fa; outline: none; }
+.q-status-menu button.is-current { background: #e5edfa; color: #2e78d9; }
 .q-card-head {
   display: flex;
   align-items: center;
