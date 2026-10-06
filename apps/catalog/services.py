@@ -7,69 +7,94 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Iterable
 
 from django.db import transaction
 
 from .models import Category, Modifier, ModifierGroup, Product
 
 
+def _option(group, name, price, order, *, default=False) -> Modifier:
+    return Modifier(
+        group=group,
+        name=name,
+        price_delta=Decimal(price),
+        is_default=default,
+        order=order,
+    )
+
+
 def seed_demo_menu() -> None:
-    """Заполнить БД небольшим реалистичным меню.
+    """Заполнить БД меню «6ки» с платными допами.
 
     Вызывается management-командой
     :mod:`apps.catalog.management.commands.seed_demo`, а также функцией
     :func:`apps.pos.bootstrap.ensure_bootstrapped` при первом запуске,
-    когда каталог пуст.
+    когда каталог пуст. Повторный запуск ничего не меняет.
     """
 
     if Category.objects.exists():
         return
 
     with transaction.atomic():
-        drinks = Category.objects.create(name="Напитки", slug="drinks", order=1, color="#f2b134")
-        desserts = Category.objects.create(name="Десерты", slug="desserts", order=2, color="#ff8ba7")
-        snacks = Category.objects.create(name="Закуски", slug="snacks", order=3, color="#7ec4cf")
+        classics = Category.objects.create(name="Классика", slug="klassika", order=1, color="#2e78d9")
+        teas = Category.objects.create(name="Чаи", slug="chai", order=2, color="#38a866")
+        seasonal = Category.objects.create(
+            name="Сезонные напитки", slug="sezon", order=3, color="#f2b838"
+        )
+        food = Category.objects.create(name="Еда", slug="eda", order=4, color="#c74747")
 
         milk = ModifierGroup.objects.create(
             name="Молоко", slug="milk",
             selection_mode=ModifierGroup.SELECTION_SINGLE, is_required=False, order=1,
         )
-        Modifier.objects.bulk_create(
-            [
-                Modifier(group=milk, name="Обычное", price_delta=Decimal("0"), order=1),
-                Modifier(group=milk, name="Овсяное", price_delta=Decimal("40"), order=2),
-                Modifier(group=milk, name="Кокосовое", price_delta=Decimal("40"), order=3),
-                Modifier(group=milk, name="Безлактозное", price_delta=Decimal("40"), order=4),
-            ]
+        size = ModifierGroup.objects.create(
+            name="Размер", slug="size",
+            selection_mode=ModifierGroup.SELECTION_SINGLE, is_required=False, order=2,
         )
-
         syrup = ModifierGroup.objects.create(
             name="Сиропы", slug="syrups",
-            selection_mode=ModifierGroup.SELECTION_MULTI, is_required=False, order=2,
+            selection_mode=ModifierGroup.SELECTION_MULTI, is_required=False, order=3,
+        )
+        extra = ModifierGroup.objects.create(
+            name="Экстра", slug="extra",
+            selection_mode=ModifierGroup.SELECTION_MULTI, is_required=False, order=4,
         )
         Modifier.objects.bulk_create(
             [
-                Modifier(group=syrup, name="Карамель", price_delta=Decimal("30"), order=1),
-                Modifier(group=syrup, name="Ваниль", price_delta=Decimal("30"), order=2),
-                Modifier(group=syrup, name="Лесной орех", price_delta=Decimal("30"), order=3),
+                _option(milk, "обычное", "0", 1, default=True),
+                _option(milk, "овсяное", "30", 2),
+                _option(milk, "миндальное", "40", 3),
+                _option(milk, "безлактозное", "30", 4),
+                _option(size, "обычный", "0", 1, default=True),
+                _option(size, "большой", "40", 2),
+                _option(syrup, "ваниль", "20", 1),
+                _option(syrup, "карамель", "20", 2),
+                _option(syrup, "лесной орех", "25", 3),
+                _option(extra, "экстра шот", "50", 1),
+                _option(extra, "мёд", "20", 2),
             ]
         )
 
-        products: Iterable[Product] = [
-            Product.objects.create(name="Эспрессо", price=Decimal("120"), category=drinks, order=1),
-            Product.objects.create(name="Американо", price=Decimal("150"), category=drinks, order=2),
-            Product.objects.create(name="Капучино", price=Decimal("200"), category=drinks, order=3),
-            Product.objects.create(name="Латте", price=Decimal("220"), category=drinks, order=4),
-            Product.objects.create(name="Раф", price=Decimal("240"), category=drinks, order=5),
-            Product.objects.create(name="Чай", price=Decimal("130"), category=drinks, order=6),
-            Product.objects.create(name="Матча", price=Decimal("260"), category=drinks, order=7),
-            Product.objects.create(name="Круассан", price=Decimal("140"), category=desserts, order=1),
-            Product.objects.create(name="Шоколадный маффин", price=Decimal("160"), category=desserts, order=2),
-            Product.objects.create(name="Сэндвич с курицей", price=Decimal("220"), category=snacks, order=1),
-            Product.objects.create(name="Гранола", price=Decimal("180"), category=snacks, order=2),
-        ]
+        drink_groups = [milk, size, syrup, extra]
+        tea_groups = [size, extra]
 
-        for product in products:
-            if product.category_id == drinks.id:
-                product.modifier_groups.set([milk, syrup])
+        def add(name, price, category, order, groups=None) -> None:
+            product = Product.objects.create(
+                name=name, price=Decimal(price), category=category, order=order
+            )
+            if groups:
+                product.modifier_groups.set(groups)
+
+        add("Латте", "220", classics, 1, drink_groups)
+        add("Капучино", "210", classics, 2, drink_groups)
+        add("Американо", "170", classics, 3, drink_groups)
+        add("Эспрессо", "150", classics, 4)
+        add("Чай облепиховый", "180", teas, 1, tea_groups)
+        add("Чай жмых", "160", teas, 2)
+        add("Чай листовой", "150", teas, 3)
+        add("Матча латте", "250", teas, 4, drink_groups)
+        add("Айс-латте", "280", seasonal, 1, drink_groups)
+        add("Раф тыквенный", "290", seasonal, 2, drink_groups)
+        add("Глинтвейн", "260", seasonal, 3)
+        add("Круассан", "120", food, 1)
+        add("Шоколадный маффин", "160", food, 2)

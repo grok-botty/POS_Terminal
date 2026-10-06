@@ -1,0 +1,45 @@
+{% load pos_extras %}
+<aside id="barista-queue"
+       class="queue-col"
+       hx-get="{% url 'pos:queue_fragment' %}"
+       hx-trigger="every 5s"
+       hx-sync="this:drop"
+       hx-swap="outerHTML">
+  <header class="queue-head">
+    <h2>Очередь</h2>
+    <span class="queue-hint">тап по статусу</span>
+  </header>
+
+  {% for order in queue %}
+    <article class="q-card q-card-{{ order.status }}">
+      <header class="q-card-head">
+        <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
+        <button type="button"
+                class="status-pill status-{{ order.status }}"
+                hx-post="{% url 'pos:queue_cycle' order.id %}"
+                hx-target="#barista-queue"
+                hx-sync="#barista-queue:abort"
+                hx-swap="outerHTML">
+          {{ order.barista_label }}
+        </button>
+      </header>
+      {% for line in order.lines.all %}
+        <div class="q-item">
+          <div class="q-item-row">
+            <span>{{ line.name_snapshot }}</span>
+            {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
+          </div>
+          {% for addon in line|visible_addons %}
+            <p class="q-addon">+ {{ addon.name_snapshot }}{% if addon.price_delta_snapshot %} {{ addon.price_delta_snapshot|rub_delta }}{% endif %}</p>
+          {% endfor %}
+          {% if line.note %}<p class="q-addon">{{ line.note }}</p>{% endif %}
+        </div>
+      {% endfor %}
+      {% if order.comment %}
+        <p class="q-comment">💬 {{ order.comment }}</p>
+      {% endif %}
+    </article>
+  {% empty %}
+    <p class="queue-empty">Очередь пуста. Оплаченный заказ появится здесь.</p>
+  {% endfor %}
+</aside>

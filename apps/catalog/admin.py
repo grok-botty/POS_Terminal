@@ -25,9 +25,9 @@ class ModifierGroupAdmin(admin.ModelAdmin):
 
 @admin.register(Modifier)
 class ModifierAdmin(admin.ModelAdmin):
-    list_display = ("name", "group", "price_delta", "is_active", "order")
-    list_filter = ("group",)
-    list_editable = ("price_delta", "is_active", "order")
+    list_display = ("name", "group", "price_delta", "is_default", "is_active", "order")
+    list_filter = ("group", "is_default")
+    list_editable = ("price_delta", "is_default", "is_active", "order")
 
 
 @admin.register(Product)

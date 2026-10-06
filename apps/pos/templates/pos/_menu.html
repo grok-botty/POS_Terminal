@@ -1,0 +1,56 @@
+{% load pos_extras %}
+<section id="menu-panel" class="menu-panel">
+  <div class="menu-tabs" role="tablist">
+    <button type="button"
+            class="menu-tab {% if not active_category %}active{% endif %}"
+            hx-get="{% url 'pos:products_grid' %}"
+            hx-target="#menu-panel"
+            hx-swap="outerHTML">Все</button>
+    {% for cat in categories %}
+      <button type="button"
+              class="menu-tab {% if active_category and active_category.id == cat.id %}active{% endif %}"
+              hx-get="{% url 'pos:products_grid' %}?category={{ cat.id }}"
+              hx-target="#menu-panel"
+              hx-swap="outerHTML">{{ cat.name }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="menu-body">
+    {% for cat in sections %}
+      {% if show_section_headers %}
+        <div class="menu-section">
+          <span class="menu-section-line"></span>
+          <span class="menu-section-label">—— {{ cat.name }} ——</span>
+          <span class="menu-section-line"></span>
+        </div>
+      {% endif %}
+      <div class="product-grid">
+        {% for product in cat.products.all %}
+          {% if product.modifier_groups.all %}
+            <button type="button"
+                    class="product-tile"
+                    hx-get="{% url 'pos:modifier_picker' product.id %}"
+                    hx-target="#picker-target"
+                    hx-swap="innerHTML">
+              <span class="p-name">{{ product.name }}</span>
+              <span class="p-price">{{ product.price|rub }}</span>
+              <span class="p-addons">допы →</span>
+            </button>
+          {% else %}
+            <button type="button"
+                    class="product-tile"
+                    hx-post="{% url 'pos:add_line' product.id %}"
+                    hx-include="#order-fields"
+                    hx-target="#order-panel"
+                    hx-swap="outerHTML">
+              <span class="p-name">{{ product.name }}</span>
+              <span class="p-price">{{ product.price|rub }}</span>
+            </button>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% empty %}
+      <p class="muted">Меню пусто.{% if is_manager %} <a href="{% url 'catalog:dashboard' %}">Добавить позиции</a>.{% endif %}</p>
+    {% endfor %}
+  </div>
+</section>

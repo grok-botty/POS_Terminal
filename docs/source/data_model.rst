@@ -49,8 +49,15 @@
    :members:
    :noindex:
 
+У :class:`~apps.catalog.models.Modifier` есть флаг ``is_default``: в группе
+одного выбора такой вариант уже отмечен, когда кассир открывает шторку.
+
 Заказы
 ------
+
+.. autoclass:: apps.orders.models.Shift
+   :members:
+   :noindex:
 
 .. autoclass:: apps.orders.models.Order
    :members:

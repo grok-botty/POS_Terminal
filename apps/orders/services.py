@@ -11,17 +11,51 @@ from decimal import Decimal
 from typing import Iterable
 
 from django.db import transaction
+from django.db.models import Case, IntegerField, Q, When
 from django.utils import timezone
 
 from apps.catalog.models import Modifier, ModifierGroup, Product
 
-from .models import Order, OrderLine, OrderLineModifier
+from .models import Order, OrderLine, OrderLineModifier, Shift
+
+
+def get_open_shift() -> Shift | None:
+    """Вернуть открытую смену или ``None``.
+
+    Бизнес-дата берётся только отсюда. Если смены нет, вызывающий не
+    подставляет системную дату — экран открытия смены появится позже.
+    """
+    return Shift.objects.filter(is_open=True).order_by("-id").first()
+
+
+def current_business_date():
+    """Дата открытой смены либо ``None``, если смену ещё не открыли."""
+    shift = get_open_shift()
+    return shift.business_date if shift else None
+
+
+def _attach_open_shift(order: Order) -> None:
+    """Привязать заказ к открытой смене, если она есть и слот ещё пуст."""
+    if order.shift_id is not None:
+        return
+    shift = get_open_shift()
+    if shift is not None:
+        order.shift = shift
 
 
 @transaction.atomic
-def create_order(*, created_by=None, fulfilment: str = Order.Fulfilment.HERE) -> Order:
+def create_order(
+    *,
+    created_by=None,
+    fulfilment: str = Order.Fulfilment.HERE,
+    guest_name: str = "",
+) -> Order:
     """Создать новый пустой заказ в статусе :attr:`Order.Status.NEW`."""
-    return Order.objects.create(created_by=created_by, fulfilment=fulfilment)
+    return Order.objects.create(
+        created_by=created_by,
+        fulfilment=fulfilment,
+        guest_name=guest_name,
+    )
 
 
 @transaction.atomic
@@ -85,6 +119,43 @@ def _validate_modifier_choice(product: Product, modifiers: list[Modifier]) -> No
         if group_id in single_groups and count > 1:
             raise ValueError("Нельзя выбрать несколько опций в группе одного выбора.")
 
+    missing = (
+        product.modifier_groups.filter(is_required=True)
+        .exclude(id__in=per_group)
+        .order_by("order", "name")
+    )
+    for group in missing:
+        raise ValueError(f"Выберите опцию в группе «{group.name}».")
+
+
+@transaction.atomic
+def update_line(
+    line: OrderLine,
+    *,
+    modifier_ids: Iterable[int] | None = None,
+    note: str | None = None,
+) -> OrderLine:
+    """Заменить допы и заметку позиции и пересчитать сумму заказа."""
+    if modifier_ids is not None:
+        modifiers = list(
+            Modifier.objects.filter(id__in=list(modifier_ids), is_active=True)
+            .select_related("group")
+        )
+        _validate_modifier_choice(line.product, modifiers)
+        line.modifiers.all().delete()
+        for modifier in modifiers:
+            OrderLineModifier.objects.create(
+                line=line,
+                modifier=modifier,
+                name_snapshot=modifier.name,
+                price_delta_snapshot=modifier.price_delta,
+            )
+    if note is not None:
+        line.note = note.strip()
+        line.save(update_fields=["note"])
+    line.order.recalc_total()
+    return line
+
 
 @transaction.atomic
 def change_line_quantity(line: OrderLine, quantity: int) -> None:
@@ -141,7 +212,48 @@ def pay_order(order: Order) -> Order:
     order.is_paid = True
     order.status = Order.Status.IN_PROGRESS
     order.paid_at = timezone.now()
-    order.save(update_fields=["is_paid", "status", "paid_at"])
+    _attach_open_shift(order)
+    order.save(update_fields=["is_paid", "status", "paid_at", "shift"])
+    return order
+
+
+@transaction.atomic
+def enqueue_order(order: Order) -> Order:
+    """Отправить черновик баристе, не отмечая оплату.
+
+    Заказ появляется в левой очереди со статусом «Не готово». Если открыта
+    смена, заказ привязывается к её дате.
+    """
+    if not order.lines.exists():
+        raise ValueError("Нельзя отправить пустой заказ.")
+    if order.is_paid:
+        return order
+    order.status = Order.Status.IN_PROGRESS
+    _attach_open_shift(order)
+    order.save(update_fields=["status", "shift"])
+    return order
+
+
+_BARISTA_CYCLE = (
+    Order.Status.IN_PROGRESS,
+    Order.Status.READY,
+    Order.Status.CANCELLED,
+)
+
+
+@transaction.atomic
+def cycle_barista_status(order: Order) -> Order:
+    """Прокрутить статус очереди: не готово → готово → отменено → не готово."""
+    try:
+        index = _BARISTA_CYCLE.index(order.status)
+    except ValueError:
+        index = -1
+    order.status = _BARISTA_CYCLE[(index + 1) % len(_BARISTA_CYCLE)]
+    if order.status == Order.Status.READY:
+        order.ready_at = timezone.now()
+    elif order.status == Order.Status.IN_PROGRESS:
+        order.ready_at = None
+    order.save(update_fields=["status", "ready_at"])
     return order
 
 
@@ -189,8 +301,53 @@ def cancel_order(order: Order) -> Order:
     return order
 
 
+def barista_queue(*, limit_cancelled: int = 8) -> list[Order]:
+    """Заказы для левой колонки кассы.
+
+    Сначала «не готово», затем «готово», затем несколько последних
+    «отменено». Черновики и уже отданные заказы сюда не попадают.
+    Открытая смена, если она есть, ограничивает выборку: заказы без смены
+    тоже видны, чтобы касса работала до экрана открытия смены.
+    """
+    rank = Case(
+        When(status=Order.Status.IN_PROGRESS, then=0),
+        When(status=Order.Status.READY, then=1),
+        When(status=Order.Status.CANCELLED, then=2),
+        default=9,
+        output_field=IntegerField(),
+    )
+    base = Order.objects.filter(
+        status__in=[
+            Order.Status.IN_PROGRESS,
+            Order.Status.READY,
+            Order.Status.CANCELLED,
+        ]
+    )
+    shift = get_open_shift()
+    if shift is not None:
+        base = base.filter(Q(shift=shift) | Q(shift__isnull=True))
+
+    active = list(
+        base.exclude(status=Order.Status.CANCELLED)
+        .annotate(_rank=rank)
+        .prefetch_related("lines__modifiers__modifier")
+        .order_by("_rank", "id")
+    )
+    cancelled = list(
+        base.filter(status=Order.Status.CANCELLED)
+        .prefetch_related("lines__modifiers__modifier")
+        .order_by("-id")[:limit_cancelled]
+    )
+    cancelled.reverse()
+    return active + cancelled
+
+
 def totals_for_today() -> dict[str, Decimal | int]:
-    """Вернуть текущие итоги за сегодня для виджета в верхней панели."""
+    """Вернуть текущие итоги за сегодня для виджета в верхней панели.
+
+    Считает по календарной дате ``created_at``. Бизнес-дата смены для
+    отчётов подключится вместе с экраном закрытия смены.
+    """
     today = timezone.localdate()
     qs = Order.objects.filter(created_at__date=today, is_paid=True)
     revenue = sum((o.total_amount for o in qs), Decimal("0.00"))

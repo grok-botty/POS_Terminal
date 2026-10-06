@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Order, OrderLine, OrderLineModifier
+from .models import Order, OrderLine, OrderLineModifier, Shift
 
 
 class OrderLineModifierInline(admin.TabularInline):
@@ -13,6 +13,12 @@ class OrderLineInline(admin.TabularInline):
     model = OrderLine
     extra = 0
     readonly_fields = ("name_snapshot", "unit_price")
+
+
+@admin.register(Shift)
+class ShiftAdmin(admin.ModelAdmin):
+    list_display = ("business_date", "is_open", "opened_by", "closed_by")
+    list_filter = ("is_open",)
 
 
 @admin.register(Order)

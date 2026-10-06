@@ -1,46 +1,71 @@
-<div class="modal-backdrop" x-data @click.self="$el.remove()">
-  <form
-    class="modal picker"
-    method="post"
-    hx-post="{% url 'pos:add_line' product.id %}"
-    hx-target="#order-panel"
-    hx-swap="outerHTML"
-    hx-on::after-request="document.getElementById('picker-target').innerHTML=''"
-  >
+{% load pos_extras %}
+<div class="modal-backdrop"
+     x-data="{
+       base: {{ base_price|js_number }},
+       n: 0,
+       label() {
+         this.n;
+         let total = Number(this.base);
+         for (const el of this.$root.querySelectorAll('input.addon-input:checked')) {
+           total += Number(el.dataset.delta || 0);
+         }
+         const rounded = Math.round(total * 100) / 100;
+         const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+         return text + ' ₽';
+       }
+     }"
+     @change="n++"
+     @click.self="$el.remove()">
+  <form class="sheet"
+        method="post"
+        {% if line %}
+          hx-post="{% url 'pos:line_edit' line.id %}"
+        {% else %}
+          hx-post="{% url 'pos:add_line' product.id %}"
+        {% endif %}
+        hx-target="#order-panel"
+        hx-include="#order-fields"
+        hx-swap="outerHTML"
+        hx-on::after-request="if (event.detail.successful && !event.detail.xhr.getResponseHeader('HX-Keep-Picker')) { const t = document.getElementById('picker-target'); if (t) t.innerHTML = ''; }">
     {% csrf_token %}
-    <header class="modal-header">
-      <h2>{{ product.name }} · {{ product.price }} ₽</h2>
-      <button type="button" class="btn btn-ghost" @click="$root.remove()">×</button>
+    <header class="sheet-head">
+      <h2>{{ product.name }} · допы</h2>
+      <button type="button" class="sheet-close" @click="$root.remove()" aria-label="Закрыть">×</button>
     </header>
-    <div class="modal-body">
-      {% for group in groups %}
-        <fieldset class="mod-group">
-          <legend>
-            {{ group.name }}
-            {% if group.selection_mode == 'single' %}<small>· один вариант</small>{% else %}<small>· любые</small>{% endif %}
-          </legend>
-          <div class="mod-options">
-            {% for opt in group.options.all %}
-              {% if opt.is_active %}
-                <label class="chip">
-                  <input
-                    type="{% if group.selection_mode == 'single' %}radio{% else %}checkbox{% endif %}"
-                    name="modifiers"
-                    value="{{ opt.id }}"
-                    {% if group.selection_mode == 'single' %}data-radio-group="g{{ group.id }}"{% endif %}
-                  />
-                  <span>{{ opt.name }}</span>
-                  {% if opt.price_delta %}<small>{% if opt.price_delta > 0 %}+{% endif %}{{ opt.price_delta }} ₽</small>{% endif %}
-                </label>
-              {% endif %}
-            {% endfor %}
-          </div>
-        </fieldset>
-      {% endfor %}
-    </div>
-    <footer class="modal-footer">
-      <button type="button" class="btn btn-ghost" @click="$root.remove()">Отмена</button>
-      <button type="submit" class="btn btn-primary">Добавить в заказ</button>
+
+    {% if error %}
+      <p class="panel-error">{{ error }}</p>
+    {% endif %}
+
+    {% for group in groups %}
+      <fieldset class="addon-group">
+        <legend>{{ group.name }}</legend>
+        <div class="addon-chips">
+          {% for opt in group.options.all %}
+            <label class="addon-chip">
+              <input class="addon-input"
+                type="{% if group.selection_mode == 'single' %}radio{% else %}checkbox{% endif %}"
+                name="{% if group.selection_mode == 'single' %}group_{{ group.id }}{% else %}modifiers{% endif %}"
+                value="{{ opt.id }}"
+                data-delta="{{ opt.price_delta|js_number }}"
+                {% if opt.id in selected_ids %}checked{% endif %}
+              />
+              <span>{{ opt.name }}</span>
+              {% if opt.price_delta %}<small>{{ opt.price_delta|rub_delta }}</small>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    {% endfor %}
+
+    <label class="field sheet-note">
+      <span>Заметка к позиции</span>
+      <input type="text" name="line_note" value="{{ line_note|default:'' }}" maxlength="200" placeholder="необязательно" autocomplete="off" />
+    </label>
+
+    <footer class="sheet-foot">
+      <strong class="sheet-total" x-text="label()">{{ initial_total|rub }}</strong>
+      <button type="submit" class="sheet-submit">В заказ</button>
     </footer>
   </form>
 </div>

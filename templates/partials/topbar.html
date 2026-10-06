@@ -1,23 +1,31 @@
+{% load pos_extras %}
 <header class="topbar">
-  <a class="brand" href="{% url 'pos:register' %}">CashMachine · <span>6ка</span></a>
-  <nav class="nav">
-    <a href="{% url 'pos:register' %}" class="nav-link {% if request.resolver_match.namespace == 'pos' %}active{% endif %}">Касса</a>
-    <a href="{% url 'orders:queue' %}" class="nav-link {% if request.resolver_match.namespace == 'orders' %}active{% endif %}">Выдача</a>
-    {% if is_manager %}
+  <div class="topbar-left">
+    <a class="brand" href="{% url 'pos:register' %}">6ка</a>
+    <nav class="nav">
+      <a href="{% url 'pos:register' %}" class="nav-link {% if request.resolver_match.namespace == 'pos' and request.resolver_match.url_name != 'shift' %}active{% endif %}">Касса</a>
       <a href="{% url 'catalog:dashboard' %}" class="nav-link {% if request.resolver_match.namespace == 'catalog' %}active{% endif %}">Меню</a>
-      <a href="{% url 'analytics:dashboard' %}" class="nav-link {% if request.resolver_match.namespace == 'analytics' %}active{% endif %}">Аналитика</a>
-    {% endif %}
-  </nav>
+      <a href="{% url 'analytics:dashboard' %}" class="nav-link {% if request.resolver_match.namespace == 'analytics' %}active{% endif %}">Статистика</a>
+      <a href="{% url 'pos:shift' %}" class="nav-link {% if request.resolver_match.namespace == 'pos' and request.resolver_match.url_name == 'shift' %}active{% endif %}">Смена</a>
+    </nav>
+  </div>
   <div class="user-menu">
     {% if user.is_authenticated %}
-      <span class="user-role">{{ user.get_role_display|default:user.username }}</span>
+      {% if open_shift %}
+        <span class="shift-chip" title="Дата смены задаётся вручную, не часами ноутбука">
+          <span class="shift-dot" aria-hidden="true"></span>
+          Смена · {{ open_shift|shift_chip }}
+        </span>
+      {% else %}
+        <a class="shift-chip shift-chip-off" href="{% url 'pos:shift' %}">Смена не открыта</a>
+      {% endif %}
       <span class="user-name">{{ user.username }}</span>
       {% if user.is_superuser %}
         <a href="/admin/" class="nav-link subtle" title="Django-админка (для суперпользователей)">Django-админка</a>
       {% endif %}
       <form action="{% url 'accounts:logout' %}" method="post" class="inline-form">
         {% csrf_token %}
-        <button type="submit" class="btn btn-ghost">Выйти</button>
+        <button type="submit" class="topbar-logout">Выйти</button>
       </form>
     {% endif %}
   </div>

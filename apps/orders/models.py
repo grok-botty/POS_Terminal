@@ -26,6 +26,46 @@ from django.db import models
 from django.utils import timezone
 
 
+class Shift(models.Model):
+    """Рабочая смена с бизнес-датой, которую задаёт кассир, а не часы ноутбука.
+
+    Экран открытия и закрытия смены (ручная дата) появится отдельным
+    проходом. Пока смена может быть создана из админки или shell: если
+    есть открытая запись, новые заказы привязываются к ней через
+    :attr:`Order.shift`, и шапка кассы показывает её :attr:`business_date`.
+    """
+
+    business_date = models.DateField("Дата смены", db_index=True)
+    is_open = models.BooleanField("Открыта", default=True, db_index=True)
+    opened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shifts_opened",
+        verbose_name="Открыл",
+    )
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shifts_closed",
+        verbose_name="Закрыл",
+    )
+    opened_at = models.DateTimeField("Открыта в", null=True, blank=True)
+    closed_at = models.DateTimeField("Закрыта в", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Смена"
+        verbose_name_plural = "Смены"
+        ordering = ("-business_date", "-id")
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        state = "открыта" if self.is_open else "закрыта"
+        return f"Смена {self.business_date:%d.%m.%Y} ({state})"
+
+
 def _generate_short_code() -> str:
     """Вернуть короткий человекочитаемый идентификатор вида ``B7-42``.
 
@@ -91,6 +131,15 @@ class Order(models.Model):
         related_name="orders_created",
         verbose_name="Кассир",
     )
+    shift = models.ForeignKey(
+        Shift,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+        verbose_name="Смена",
+        help_text="Заполняется при оплате или отправке в очередь, если смена открыта.",
+    )
     created_at = models.DateTimeField("Создан", default=timezone.now, db_index=True)
     paid_at = models.DateTimeField("Оплачен в", null=True, blank=True)
     ready_at = models.DateTimeField("Готов в", null=True, blank=True)
@@ -108,12 +157,23 @@ class Order(models.Model):
         :func:`apps.orders.services` при любом изменении позиций или
         модификаторов.
         """
+        cache = getattr(self, "_prefetched_objects_cache", None)
+        if cache is not None:
+            cache.pop("lines", None)
         total = Decimal("0.00")
         for line in self.lines.all():
             total += line.subtotal()
         self.total_amount = total
         self.save(update_fields=["total_amount"])
         return total
+
+    def barista_label(self) -> str:
+        """Короткая подпись статуса для очереди баристы."""
+        return {
+            self.Status.IN_PROGRESS: "Не готово",
+            self.Status.READY: "Готово",
+            self.Status.CANCELLED: "Отменено",
+        }.get(self.status, self.get_status_display())
 
     def is_active(self) -> bool:
         """Вернуть ``True``, если заказ должен показываться в активной очереди."""
@@ -152,6 +212,7 @@ class OrderLine(models.Model):
         "Цена за единицу, ₽", max_digits=8, decimal_places=2
     )
     quantity = models.PositiveIntegerField("Количество", default=1)
+    note = models.CharField("Заметка к позиции", max_length=200, blank=True)
 
     class Meta:
         verbose_name = "Позиция заказа"

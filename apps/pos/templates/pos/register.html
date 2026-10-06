@@ -1,32 +1,13 @@
 {% extends "base.html" %}
 
 {% block title %}Касса · {{ app_name }}{% endblock %}
+{% block body_class %}kassa-page{% endblock %}
 
 {% block content %}
-<div class="register" x-data="{ picker: null }">
-  <aside class="categories">
-    {% for cat in categories %}
-      <button
-        class="cat-tab {% if active_category and active_category.id == cat.id %}active{% endif %}"
-        style="--cat-color: {{ cat.color }}"
-        hx-get="{% url 'pos:products_grid' %}?category={{ cat.id }}"
-        hx-target="#products"
-        hx-swap="outerHTML"
-      >{{ cat.name }}</button>
-    {% empty %}
-      <p class="muted">Меню пусто. {% if is_manager %}<a href="{% url 'catalog:dashboard' %}">Добавить категории</a>.{% endif %}</p>
-    {% endfor %}
-  </aside>
-
-  <section id="products-wrap" class="products-wrap">
-    {% include "pos/_products.html" %}
-  </section>
-
-  <aside class="order-panel-wrap">
-    {% include "pos/_order_panel.html" %}
-  </aside>
-
-  {# Modifier picker dialog target (rendered by htmx into this container). #}
-  <div id="picker-target"></div>
+<div class="kassa">
+  {% include "pos/_queue.html" %}
+  {% include "pos/_menu.html" %}
+  {% include "pos/_order_panel.html" %}
 </div>
+<div id="picker-target"></div>
 {% endblock %}
