@@ -686,6 +686,14 @@ _CHART_MONTHS = (
 )
 
 
+def _px(value) -> str:
+    """Координата SVG с точкой. Шаблон с ru-локалью иначе пишет «100,0»."""
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.1f}"
+
+
 def _revenue_chart(by_date: list[dict]) -> dict | None:
     """Геометрия SVG: дата смены по X, выручка по Y. Часов нет."""
     if not by_date:
@@ -709,22 +717,22 @@ def _revenue_chart(by_date: list[dict]) -> dict | None:
         day = row["date"]
         label = f"{day.day} {_CHART_MONTHS[day.month - 1]}"
         points.append({
-            "x": round(center - bar_w / 2, 1),
-            "y": round(baseline - bar_h, 1),
-            "w": round(bar_w, 1),
-            "h": round(bar_h, 1),
-            "cx": round(center, 1),
+            "x": _px(center - bar_w / 2),
+            "y": _px(baseline - bar_h),
+            "w": _px(bar_w),
+            "h": _px(bar_h),
+            "cx": _px(center),
             "label": label,
             "show_label": index % stride == 0 or index == count - 1,
             "revenue": revenue,
         })
     return {
-        "width": width,
-        "height": height,
-        "left": left,
-        "baseline": baseline,
-        "top": top,
-        "mid": round(top + plot_h / 2, 1),
+        "width": _px(width),
+        "height": _px(height),
+        "left": _px(left),
+        "baseline": _px(baseline),
+        "top": _px(top),
+        "mid": _px(top + plot_h / 2),
         "y_max": peak,
         "y_mid": peak / 2,
         "points": points,

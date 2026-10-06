@@ -510,6 +510,7 @@ class StatsByShiftDateTests(TestCase):
         )
         self.assertContains(response, 'class="revenue-chart"')
         self.assertContains(response, "5 окт")
+        self.assertNotIn(",", response.content.decode().split('class="revenue-chart"', 1)[1].split("</svg>", 1)[0])
 
     def test_date_range_uses_shift_business_date(self):
         url = reverse("pos:stats") + "?from=2026-10-01&to=2026-10-01"
