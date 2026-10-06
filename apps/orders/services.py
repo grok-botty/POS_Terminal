@@ -41,21 +41,27 @@ def get_open_shift() -> Shift | None:
 
 
 @transaction.atomic
-def open_shift(*, business_date: date, opened_by=None) -> Shift:
+def open_shift(*, business_date: date, opened_by=None, cashier_name: str = "") -> Shift:
     """Открыть смену на вручную указанную дату.
 
     Системные часы не читаются: ``business_date`` обязана прийти от
     кассира. ``opened_at`` остаётся пустым — ноутбук с сломанными часами
     не должен оставлять ложную метку. Вторая открытая смена запрещена.
+    ``cashier_name`` — подпись в шапке; если её не прислали, берётся логин.
+    Стартовой кассы нет.
     """
     if not isinstance(business_date, date):
         raise ShiftError("Укажите дату смены.")
     if Shift.objects.filter(is_open=True).exists():
         raise ShiftError("Смена уже открыта. Сначала закройте её.")
+    name = (cashier_name or "").strip()
+    if not name and opened_by is not None and getattr(opened_by, "is_authenticated", True):
+        name = (opened_by.get_full_name() or opened_by.get_username() or "").strip()
     return Shift.objects.create(
         business_date=business_date,
         is_open=True,
-        opened_by=opened_by,
+        opened_by=opened_by if getattr(opened_by, "is_authenticated", True) else None,
+        cashier_name=name[:100],
     )
 
 

@@ -24,7 +24,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.catalog.models import Category, Modifier, Product
 from apps.orders import services as order_services
-from apps.orders.models import Order, OrderLine
+from apps.orders.models import Order, OrderLine, Shift
 
 SESSION_ORDER_KEY = "current_order_id"
 
@@ -76,6 +76,25 @@ def open_shift_required(view):
         return view(request, *args, **kwargs)
 
     return wrapper
+
+
+def _cashier_prefill(request: HttpRequest, posted: str = "") -> str:
+    """Имя кассира для формы открытия: то, что ввели, прошлая смена или логин."""
+    text = (posted or "").strip()
+    if text:
+        return text
+    last = (
+        Shift.objects.exclude(cashier_name="")
+        .order_by("-id")
+        .values_list("cashier_name", flat=True)
+        .first()
+    )
+    if last:
+        return last
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
+        return (user.get_full_name() or user.get_username() or "").strip()
+    return ""
 
 
 def _parse_iso_date(raw: str | None):
@@ -278,6 +297,7 @@ def shift_screen(request: HttpRequest) -> HttpResponse:
             opened = order_services.open_shift(
                 business_date=business_date,
                 opened_by=request.user,
+                cashier_name=request.POST.get("cashier_name", ""),
             )
         except order_services.ShiftError as exc:
             return render(
@@ -287,6 +307,9 @@ def shift_screen(request: HttpRequest) -> HttpResponse:
                     "mode": "open",
                     "error": str(exc),
                     "posted_date": request.POST.get("business_date", ""),
+                    "cashier_name": _cashier_prefill(
+                        request, request.POST.get("cashier_name", "")
+                    ),
                 },
             )
         messages.success(
@@ -296,7 +319,15 @@ def shift_screen(request: HttpRequest) -> HttpResponse:
         return redirect("pos:register")
 
     if current is None:
-        return render(request, "pos/shift.html", {"mode": "open", "posted_date": ""})
+        return render(
+            request,
+            "pos/shift.html",
+            {
+                "mode": "open",
+                "posted_date": "",
+                "cashier_name": _cashier_prefill(request),
+            },
+        )
 
     summary = order_services.shift_summary(current)
     if request.method == "POST" and request.POST.get("action") == "close":

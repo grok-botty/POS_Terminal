@@ -19,7 +19,7 @@
       {% else %}
         <a class="shift-chip shift-chip-off" href="{% url 'pos:shift' %}">Смена не открыта</a>
       {% endif %}
-      <span class="user-name">{{ user.username }}</span>
+      <span class="user-name">{% if open_shift.cashier_name %}{{ open_shift.cashier_name }}{% else %}{{ user.username }}{% endif %}</span>
       {% if user.is_superuser %}
         <a href="/admin/" class="nav-link subtle" title="Django-админка (для суперпользователей)">Django-админка</a>
       {% endif %}

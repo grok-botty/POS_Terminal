@@ -47,10 +47,13 @@ class CatalogPermissionsTests(TestCase):
             name="Напитки", slug="drinks", order=1
         )
 
-    def test_anonymous_redirected_to_login(self):
+    def test_anonymous_reaches_the_menu_as_admin(self):
         response = self.client.get(reverse("catalog:dashboard"))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("accounts:login"), response.url)
+        self.assertRedirects(response, reverse("pos:shift"))
+        open_shift()
+        response = self.client.get(reverse("catalog:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Позиции")
 
     def test_cashier_forbidden(self):
         self.client.login(username="cash", password="pw")

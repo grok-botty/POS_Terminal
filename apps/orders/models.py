@@ -57,6 +57,12 @@ class Shift(models.Model):
         related_name="shifts_closed",
         verbose_name="Закрыл",
     )
+    cashier_name = models.CharField(
+        "Кассир",
+        max_length=100,
+        blank=True,
+        help_text="Имя на кассе, как его вписали при открытии смены.",
+    )
     opened_at = models.DateTimeField("Открыта в", null=True, blank=True)
     closed_at = models.DateTimeField("Закрыта в", null=True, blank=True)
 

@@ -53,6 +53,7 @@ class RegisterScreenTests(TestCase):
         response = self.client.get(reverse("pos:register"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Очередь")
+        self.assertContains(response, "клик меняет статус")
         self.assertContains(response, ">Все<")
         self.assertContains(response, "—— Классика ——")
         self.assertContains(response, "—— Еда ——")
@@ -338,6 +339,7 @@ class ShiftScreenTests(TestCase):
         self.assertTrue(shift.is_open)
         self.assertIsNone(shift.opened_at)
         self.assertEqual(shift.opened_by, self.user)
+        self.assertEqual(shift.cashier_name, "cashier")
         self.assertNotEqual(shift.business_date, date(2026, 10, 6))
 
         Shift.objects.all().delete()
@@ -345,6 +347,38 @@ class ShiftScreenTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Укажите дату смены")
         self.assertFalse(Shift.objects.exists())
+
+    def test_open_shift_stores_the_typed_cashier_name(self):
+        page = self.client.get(reverse("pos:shift"))
+        self.assertContains(page, 'name="cashier_name"')
+        self.assertContains(page, 'value="cashier"')
+        response = self.client.post(
+            reverse("pos:shift"),
+            {
+                "action": "open",
+                "business_date": "2026-10-05",
+                "cashier_name": "Маша на смене",
+            },
+        )
+        self.assertRedirects(response, reverse("pos:register"))
+        shift = Shift.objects.get()
+        self.assertEqual(shift.cashier_name, "Маша на смене")
+        till = self.client.get(reverse("pos:register"))
+        self.assertContains(till, "Маша на смене")
+        self.assertContains(till, "клик меняет статус")
+
+    def test_anonymous_request_signs_in_as_admin(self):
+        from django.test import Client
+
+        guest = Client()
+        response = guest.get(reverse("pos:shift"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Открыть смену")
+        self.assertNotContains(response, "Вход в кассу")
+        admin = User.objects.get(username="admin")
+        self.assertTrue(admin.is_manager())
+        self.assertRedirects(guest.get(reverse("pos:register")), reverse("pos:shift"))
+        self.assertRedirects(guest.get(reverse("pos:stats")), reverse("pos:shift"))
 
     def test_close_requires_the_exact_word_and_keeps_unfinished_orders(self):
         shift = Shift.objects.create(

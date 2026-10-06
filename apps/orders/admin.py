@@ -17,7 +17,7 @@ class OrderLineInline(admin.TabularInline):
 
 @admin.register(Shift)
 class ShiftAdmin(admin.ModelAdmin):
-    list_display = ("business_date", "is_open", "opened_by", "closed_by")
+    list_display = ("business_date", "is_open", "cashier_name", "opened_by", "closed_by")
     list_filter = ("is_open",)
 
 
