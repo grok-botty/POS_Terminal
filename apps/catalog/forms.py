@@ -86,7 +86,8 @@ class ModifierForm(_StyledForm):
 
     class Meta:
         model = Modifier
-        fields = ("group", "name", "price_delta", "is_active", "order")
+        fields = ("group", "name", "price_delta", "is_default", "is_active", "order")
         help_texts = {
             "price_delta": "Может быть отрицательным — тогда это скидка.",
+            "is_default": "В группе одного выбора этот вариант уже выбран в шторке допов.",
         }

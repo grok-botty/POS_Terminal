@@ -1,0 +1,39 @@
+{% load pos_extras %}
+<section id="menu-panel" class="menu-panel">
+  <div class="menu-toolbar">
+    <div class="menu-tabs" role="tablist">
+      <button type="button"
+              class="menu-tab {% if not active_category %}active{% endif %}"
+              hx-get="{% url 'pos:products_grid' %}"
+              hx-include="#menu-search"
+              hx-target="#menu-panel"
+              hx-swap="outerHTML">Все</button>
+      {% for cat in categories %}
+        <button type="button"
+                class="menu-tab {% if active_category and active_category.id == cat.id %}active{% endif %}"
+                hx-get="{% url 'pos:products_grid' %}?category={{ cat.id }}"
+                hx-include="#menu-search"
+                hx-target="#menu-panel"
+                hx-swap="outerHTML">{{ cat.name }}</button>
+      {% endfor %}
+    </div>
+    <input id="menu-search"
+           class="menu-search"
+           type="search"
+           name="q"
+           value="{{ query }}"
+           placeholder="Поиск"
+           aria-label="Поиск по названию"
+           autocomplete="off"
+           enterkeyhint="search"
+           hx-get="{% url 'pos:products_grid' %}{% if active_category %}?category={{ active_category.id }}{% endif %}"
+           hx-target="#menu-body"
+           hx-swap="innerHTML"
+           hx-trigger="input changed delay:200ms, search"
+           hx-sync="this:replace">
+  </div>
+
+  <div id="menu-body" class="menu-body">
+    {% include "pos/_menu_body.html" %}
+  </div>
+</section>

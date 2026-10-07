@@ -1,0 +1,20 @@
+<aside class="menu-side">
+  <h1>Меню</h1>
+  <p class="menu-side-note">фильтр по тегам</p>
+  <a class="side-row {% if section == 'products' and not active_tag %}is-on{% endif %}"
+     href="{% url 'catalog:dashboard' %}{% if query %}?q={{ query|urlencode }}{% endif %}">
+    <span>Все позиции</span>
+    <b>{{ total_products }}</b>
+  </a>
+  {% for cat in categories %}
+    <a class="side-row {% if active_tag and active_tag.id == cat.id %}is-on{% endif %}"
+       href="{% url 'catalog:dashboard' %}?tag={{ cat.id }}{% if query %}&q={{ query|urlencode }}{% endif %}">
+      <span><i style="background: {{ cat.color }}"></i>{{ cat.name }}</span>
+      <b>{{ cat.n_products }}</b>
+    </a>
+  {% endfor %}
+  <p class="menu-side-label">Справочники</p>
+  <a class="side-link {% if section == 'products' %}is-on{% endif %}" href="{% url 'catalog:dashboard' %}">Позиции</a>
+  <a class="side-link {% if section == 'groups' %}is-on{% endif %}" href="{% url 'catalog:groups' %}">Группы допов</a>
+  <a class="side-link {% if section == 'tags' %}is-on{% endif %}" href="{% url 'catalog:tags' %}">Теги</a>
+</aside>

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% load pos_extras %}
+
+{% block title %}Смена · {{ app_name }}{% endblock %}
+{% block body_class %}shift-page{% endblock %}
+
+{% block content %}
+<div class="shift-wrap">
+  <section class="shift-card">
+    {% if mode == "open" %}
+      <h1>Открыть смену</h1>
+      <p class="shift-lead">Оффлайн · дата ставится вручную (часы ноута не используем).</p>
+      {% if error %}<p class="shift-error">{{ error }}</p>{% endif %}
+      <form method="post" class="shift-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="open">
+        <label class="field">
+          <span>Дата смены</span>
+          <input type="date" name="business_date" required value="{{ posted_date }}">
+        </label>
+        <label class="field">
+          <span>Кассир</span>
+          <input type="text" name="cashier_name" maxlength="100" required value="{{ cashier_name }}" autocomplete="name">
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Открыть смену</button>
+      </form>
+
+    {% elif mode == "confirm" %}
+      <h1>Закрыть смену</h1>
+      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · {{ shift.cashier_name|default:user.username }}</p>
+      <p class="shift-lead">Введите <strong>ЗАКРЫТЬ</strong> заглавными буквами. Одна кнопка смену не закрывает.</p>
+      {% if summary.unfinished %}
+        <p class="shift-note">Незавершённые заказы не отменятся сами — они останутся в истории этой смены. Пометить их отменёнными можно на кассе до закрытия.</p>
+      {% endif %}
+      {% if error %}<p class="shift-error">{{ error }}</p>{% endif %}
+      <form method="post" class="shift-form" x-data="{ text: '{{ confirmation|default:''|escapejs }}' }">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="close">
+        <label class="field">
+          <span>Подтверждение</span>
+          <input type="text" name="confirmation" x-model="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ЗАКРЫТЬ">
+        </label>
+        <div class="shift-actions">
+          <a class="btn btn-block" href="{% url 'pos:shift' %}">Не закрывать</a>
+          <button type="submit" class="btn btn-close-confirm btn-block" :disabled="text.trim() !== 'ЗАКРЫТЬ'">Да, закрыть смену</button>
+        </div>
+      </form>
+
+    {% else %}
+      <h1>Закрыть смену</h1>
+      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · {{ shift.cashier_name|default:user.username }}</p>
+      <dl class="shift-stats">
+        <div><dt>Заказов</dt><dd>{{ summary.orders }}</dd></div>
+        <div><dt>Оплачено</dt><dd>{{ summary.paid|rub }}</dd></div>
+        <div><dt>Отменено</dt><dd>{{ summary.cancelled }}</dd></div>
+        <div>
+          <dt>В очереди ещё</dt>
+          <dd>{{ summary.unfinished }} <span class="muted">(не готово)</span></dd>
+        </div>
+      </dl>
+      {% if summary.unfinished %}
+        <div class="shift-warn">
+          <strong>⚠ Есть незавершённые заказы</strong>
+          <span>Их можно оставить в истории или пометить отменёнными.</span>
+        </div>
+      {% endif %}
+      <a class="btn btn-soft-danger btn-block" href="{% url 'pos:shift' %}?step=confirm">Закрыть смену…</a>
+      <p class="shift-hint">Одна кнопка не закрывает — нужен второй шаг.</p>
+      <a class="btn btn-block" href="{% url 'pos:register' %}">Отмена</a>
+    {% endif %}
+  </section>
+  <p class="shift-credit">автор проги <a href="https://t.me/LotFullKa" target="_blank" rel="noopener">@LotFullKa</a></p>
+</div>
+{% endblock %}

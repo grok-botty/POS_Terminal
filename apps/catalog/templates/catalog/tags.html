@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Теги · {{ app_name }}{% endblock %}
+{% block body_class %}menu-editor-page{% endblock %}
+
+{% block content %}
+<div class="menu-editor menu-editor-tags">
+  {% include "catalog/_side.html" %}
+  <section class="menu-tags">
+    <header class="menu-col-head">
+      <h2>Теги</h2>
+    </header>
+    <p class="muted">Тег — вкладка на кассе. Цвет виден в фильтре меню.</p>
+    <form class="tag-create" method="post" action="{% url 'catalog:category_create' %}">
+      {% csrf_token %}
+      <input type="text" name="name" placeholder="Новый тег" required>
+      <input type="color" name="color" value="#2e78d9" aria-label="Цвет">
+      <input type="hidden" name="slug" value="">
+      <input type="hidden" name="order" value="{{ categories|length }}">
+      <input type="hidden" name="is_active" value="on">
+      <input type="hidden" name="back" value="{% url 'catalog:tags' %}">
+      <button type="submit" class="btn btn-primary">+ Тег</button>
+    </form>
+    <div class="tag-table">
+      {% for cat in categories %}
+        <div class="tag-line-wrap">
+          <form method="post" action="{% url 'catalog:category_edit' cat.id %}" class="tag-line">
+            {% csrf_token %}
+            <input type="hidden" name="slug" value="{{ cat.slug }}">
+            <input type="hidden" name="back" value="{% url 'catalog:tags' %}">
+            <input type="color" name="color" value="{{ cat.color }}" aria-label="Цвет {{ cat.name }}">
+            <input type="text" name="name" value="{{ cat.name }}" required>
+            <input type="number" name="order" value="{{ cat.order }}" aria-label="Порядок">
+            <label class="opt-default">
+              <input type="checkbox" name="is_active" {% if cat.is_active %}checked{% endif %}>
+              на кассе
+            </label>
+            <span class="muted">{{ cat.n_products }} поз.</span>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+            <button type="submit" class="link-danger tag-del" formnovalidate
+                    formaction="{% url 'catalog:category_delete' cat.id %}"
+                    name="back" value="{% url 'catalog:tags' %}"
+                    onclick="return confirm('Удалить тег «{{ cat.name }}»? Позиции этого тега тоже удалятся.');">Удалить</button>
+          </form>
+        </div>
+      {% empty %}
+        <p class="muted">Тегов ещё нет.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

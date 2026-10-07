@@ -8,9 +8,12 @@
 
 1. Кассир собирает :class:`Order` из позиций :class:`OrderLine` и,
    опционально, привязывает к каждой позиции :class:`OrderLineModifier`.
-2. Когда гость оплачивает заказ, :attr:`Order.is_paid` становится
-   ``True``, а сам заказ попадает в кухонную очередь (``IN_PROGRESS``).
-3. Бариста помечает заказ :attr:`Order.Status.READY`. Кассир выдаёт его
+2. «В очередь» ставит заказ в работу (``IN_PROGRESS``), не меняя
+   :attr:`Order.is_paid`. На карточке это «не оплачено» плюс «не готово».
+   «Оплатить» ставит :attr:`Order.is_paid` и тоже отправляет черновик
+   в очередь, но плашка «не оплачено» не показывается.
+3. Готовность крутится отдельно: не готово → готово → отменено.
+   Оплата её не сбрасывает. Кассир выдаёт заказ
    (:attr:`Order.Status.HANDED_OFF`).
 4. В конце смены :func:`apps.orders.services.close_day` фиксирует итоги в
    :class:`apps.analytics.models.DailySummary`.
@@ -24,6 +27,53 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
+
+class Shift(models.Model):
+    """Рабочая смена с бизнес-датой, которую задаёт кассир, а не часы ноутбука.
+
+    Дата вводится на экране «Смена» и больше ниоткуда не подставляется.
+    Поля :attr:`opened_at` и :attr:`closed_at` часами ноутбука не
+    заполняются: ноутбук может врать. Закрытие ставит :attr:`is_open`
+    в ``False`` и запоминает :attr:`closed_by`. Незавершённые заказы
+    при этом не отменяются — они остаются историей этой смены.
+    """
+
+    business_date = models.DateField("Дата смены", db_index=True)
+    is_open = models.BooleanField("Открыта", default=True, db_index=True)
+    opened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shifts_opened",
+        verbose_name="Открыл",
+    )
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shifts_closed",
+        verbose_name="Закрыл",
+    )
+    cashier_name = models.CharField(
+        "Кассир",
+        max_length=100,
+        blank=True,
+        help_text="Имя на кассе, как его вписали при открытии смены.",
+    )
+    opened_at = models.DateTimeField("Открыта в", null=True, blank=True)
+    closed_at = models.DateTimeField("Закрыта в", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Смена"
+        verbose_name_plural = "Смены"
+        ordering = ("-business_date", "-id")
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        state = "открыта" if self.is_open else "закрыта"
+        return f"Смена {self.business_date:%d.%m.%Y} ({state})"
 
 
 def _generate_short_code() -> str:
@@ -91,6 +141,15 @@ class Order(models.Model):
         related_name="orders_created",
         verbose_name="Кассир",
     )
+    shift = models.ForeignKey(
+        Shift,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+        verbose_name="Смена",
+        help_text="Заполняется при оплате или отправке в очередь, если смена открыта.",
+    )
     created_at = models.DateTimeField("Создан", default=timezone.now, db_index=True)
     paid_at = models.DateTimeField("Оплачен в", null=True, blank=True)
     ready_at = models.DateTimeField("Готов в", null=True, blank=True)
@@ -108,12 +167,32 @@ class Order(models.Model):
         :func:`apps.orders.services` при любом изменении позиций или
         модификаторов.
         """
+        cache = getattr(self, "_prefetched_objects_cache", None)
+        if cache is not None:
+            cache.pop("lines", None)
         total = Decimal("0.00")
         for line in self.lines.all():
             total += line.subtotal()
         self.total_amount = total
         self.save(update_fields=["total_amount"])
         return total
+
+    def barista_label(self) -> str:
+        """Короткая подпись готовности для очереди баристы.
+
+        Оплата сюда не входит: её показывает :meth:`unpaid_label`.
+        """
+        return {
+            self.Status.IN_PROGRESS: "Не готово",
+            self.Status.READY: "Готово",
+            self.Status.CANCELLED: "Отменено",
+        }.get(self.status, self.get_status_display())
+
+    def unpaid_label(self) -> str:
+        """Плашка оплаты. Пустая строка, если заказ уже оплачен."""
+        if self.is_paid:
+            return ""
+        return "не оплачено"
 
     def is_active(self) -> bool:
         """Вернуть ``True``, если заказ должен показываться в активной очереди."""
@@ -152,6 +231,7 @@ class OrderLine(models.Model):
         "Цена за единицу, ₽", max_digits=8, decimal_places=2
     )
     quantity = models.PositiveIntegerField("Количество", default=1)
+    note = models.CharField("Заметка к позиции", max_length=200, blank=True)
 
     class Meta:
         verbose_name = "Позиция заказа"

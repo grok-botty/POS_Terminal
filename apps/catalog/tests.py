@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -18,6 +19,14 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from apps.catalog.models import Category, Modifier, ModifierGroup, Product
+from apps.orders.models import Shift
+
+
+def open_shift(user=None):
+    """Касса и меню без открытой смены уводят на экран «Смена»."""
+    return Shift.objects.create(
+        business_date=date(2026, 10, 5), is_open=True, opened_by=user
+    )
 
 
 User = get_user_model()
@@ -38,10 +47,13 @@ class CatalogPermissionsTests(TestCase):
             name="Напитки", slug="drinks", order=1
         )
 
-    def test_anonymous_redirected_to_login(self):
+    def test_anonymous_reaches_the_menu_as_admin(self):
         response = self.client.get(reverse("catalog:dashboard"))
-        self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("accounts:login"), response.url)
+        self.assertRedirects(response, reverse("pos:shift"))
+        open_shift()
+        response = self.client.get(reverse("catalog:dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Позиции")
 
     def test_cashier_forbidden(self):
         self.client.login(username="cash", password="pw")
@@ -51,6 +63,8 @@ class CatalogPermissionsTests(TestCase):
         self.assertEqual(
             self.client.get(reverse("catalog:product_create")).status_code, 403
         )
+        self.assertEqual(self.client.get(reverse("catalog:groups")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("catalog:tags")).status_code, 403)
         response = self.client.post(
             reverse("catalog:category_toggle", args=[self.category.id])
         )
@@ -58,16 +72,25 @@ class CatalogPermissionsTests(TestCase):
 
     def test_manager_allowed(self):
         self.client.login(username="mgr", password="pw")
+        open_shift(self.manager)
         response = self.client.get(reverse("catalog:dashboard"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Управление меню")
+        self.assertContains(response, "Позиции")
+        self.assertContains(response, "Редактирование")
 
 
 class CatalogNavigationTests(TestCase):
     """Верхняя навигация не должна вести в /admin/ для обычных менеджеров."""
 
+    def test_manager_without_shift_is_sent_to_open_it(self):
+        User.objects.create_user(username="mgr", password="pw", role=User.ROLE_ADMIN)
+        self.client.login(username="mgr", password="pw")
+        response = self.client.get(reverse("catalog:dashboard"))
+        self.assertRedirects(response, reverse("pos:shift"))
+
     def test_manager_topbar_hides_django_admin(self):
         user = User.objects.create_user(username="m", password="pw", role=User.ROLE_ADMIN)
+        open_shift(user)
         self.client.force_login(user)
         response = self.client.get(reverse("pos:register"))
         self.assertContains(response, 'href="/catalog/"')
@@ -80,6 +103,7 @@ class CatalogNavigationTests(TestCase):
         user.is_superuser = True
         user.is_staff = True
         user.save()
+        open_shift(user)
         self.client.force_login(user)
         response = self.client.get(reverse("pos:register"))
         self.assertContains(response, 'href="/admin/"')
@@ -99,6 +123,7 @@ class ProductCrudTests(TestCase):
         cls.group = ModifierGroup.objects.create(name="Молоко", slug="milk")
 
     def setUp(self):
+        open_shift(self.manager)
         self.client.login(username="mgr", password="pw")
 
     def test_create_product_via_form(self):
@@ -182,6 +207,7 @@ class CategoryCrudTests(TestCase):
         )
 
     def setUp(self):
+        open_shift(self.manager)
         self.client.login(username="mgr", password="pw")
 
     def test_create_category_generates_slug(self):
@@ -215,6 +241,7 @@ class ModifierCrudTests(TestCase):
         cls.group = ModifierGroup.objects.create(name="Сиропы", slug="syrups")
 
     def setUp(self):
+        open_shift(self.manager)
         self.client.login(username="mgr", password="pw")
 
     def test_create_modifier(self):
@@ -262,14 +289,98 @@ class DashboardRenderingTests(TestCase):
         ModifierGroup.objects.create(name="Молоко", slug="milk")
 
     def test_dashboard_shows_products_and_toggle(self):
+        open_shift(self.manager)
         self.client.force_login(self.manager)
         response = self.client.get(reverse("catalog:dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Латте")
         self.assertContains(response, "Скрытая позиция")
-        # Кнопки-переключатели должны быть в разметке.
-        self.assertContains(response, "В меню")
-        self.assertContains(response, "Скрыт")
-        self.assertContains(response, "switch-btn")
-        # HTMX-эндпоинт переключения должен быть в разметке.
+        self.assertContains(response, "в меню")
+        self.assertContains(response, "скрыто")
+        self.assertContains(response, "Показывать в кассе")
         self.assertContains(response, "/catalog/products/")
+
+
+class MenuEditorTests(TestCase):
+    """Редактор позиций и справочник групп допов."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.manager = User.objects.create_user(
+            username="mgr", password="pw", role=User.ROLE_ADMIN
+        )
+        cls.category = Category.objects.create(name="Классика", slug="klassika", order=1)
+        cls.group = ModifierGroup.objects.create(
+            name="Молоко", slug="milk", selection_mode=ModifierGroup.SELECTION_SINGLE
+        )
+
+    def setUp(self):
+        open_shift(self.manager)
+        self.client.login(username="mgr", password="pw")
+
+    def test_create_product_attaches_group_and_shows_on_the_till(self):
+        response = self.client.post(
+            reverse("catalog:product_create"),
+            data={
+                "name": "Раф тыквенный",
+                "price": "290",
+                "category": self.category.id,
+                "modifier_groups": [self.group.id],
+                "is_active": "on",
+                "order": 1,
+                "stay": "1",
+            },
+        )
+        product = Product.objects.get(name="Раф тыквенный")
+        self.assertRedirects(
+            response, reverse("catalog:dashboard") + f"?product={product.id}"
+        )
+        self.assertEqual(product.price, Decimal("290"))
+        self.assertIn(self.group, product.modifier_groups.all())
+        screen = self.client.get(reverse("pos:register"))
+        self.assertContains(screen, "Раф тыквенный")
+        self.assertContains(screen, "допы →")
+
+    def test_group_editor_saves_priced_default_and_keeps_one_default(self):
+        url = reverse("catalog:group_save_edit", args=[self.group.id])
+        self.client.post(
+            url,
+            data={
+                "name": "Молоко",
+                "slug": "milk",
+                "selection_mode": "single",
+                "order": 1,
+                "new_name": "обычное",
+                "new_price": "0",
+                "new_default": "on",
+            },
+        )
+        plain = Modifier.objects.get(name="обычное")
+        self.assertEqual(plain.price_delta, Decimal("0"))
+        self.assertTrue(plain.is_default)
+
+        self.client.post(
+            url,
+            data={
+                "name": "Молоко",
+                "slug": "milk",
+                "selection_mode": "single",
+                "order": 1,
+                "option_id": [plain.id],
+                f"name_{plain.id}": "обычное",
+                f"price_{plain.id}": "0",
+                "new_name": "овсяное",
+                "new_price": "30",
+                "new_default": "on",
+            },
+        )
+        plain.refresh_from_db()
+        oat = Modifier.objects.get(name="овсяное")
+        self.assertEqual(oat.price_delta, Decimal("30.00"))
+        self.assertTrue(oat.is_default)
+        self.assertFalse(plain.is_default)
+
+        page = self.client.get(reverse("catalog:groups") + f"?group={self.group.id}")
+        self.assertContains(page, "овсяное")
+        self.assertContains(page, "Один вариант")
+        self.assertContains(page, "по умолчанию")

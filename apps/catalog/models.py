@@ -111,6 +111,11 @@ class Modifier(models.Model):
         default=Decimal("0.00"),
         help_text="Может быть отрицательным (скидка).",
     )
+    is_default = models.BooleanField(
+        "Выбран по умолчанию",
+        default=False,
+        help_text="Для группы одного выбора: чип уже нажат, когда открывается шторка допов.",
+    )
     is_active = models.BooleanField("Активен", default=True)
     order = models.IntegerField("Порядок", default=0)
 

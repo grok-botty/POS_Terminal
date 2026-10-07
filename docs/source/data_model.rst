@@ -49,8 +49,20 @@
    :members:
    :noindex:
 
+У :class:`~apps.catalog.models.Modifier` есть флаг ``is_default``: в группе
+одного выбора такой вариант уже отмечен, когда кассир открывает шторку.
+
 Заказы
 ------
+
+.. autoclass:: apps.orders.models.Shift
+   :members:
+   :noindex:
+
+Бизнес-дата смены задаётся кассиром. Закрытие не проставляет ``closed_at``
+по системным часам и не меняет статус заказов «не готово»: они остаются
+привязанными к этой смене. Статистика группирует заказы по смене, а не по
+``created_at``.
 
 .. autoclass:: apps.orders.models.Order
    :members:

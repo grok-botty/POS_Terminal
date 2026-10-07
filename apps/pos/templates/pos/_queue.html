@@ -1,0 +1,58 @@
+{% load pos_extras %}
+<aside id="barista-queue"
+       class="queue-col"
+       hx-get="{% url 'pos:queue_fragment' %}"
+       hx-trigger="every 5s, refreshQueue from:body"
+       hx-sync="this:drop"
+       hx-swap="outerHTML">
+  <header class="queue-head">
+    <h2>Очередь</h2>
+    <span class="queue-hint">клик меняет статус</span>
+  </header>
+
+  {% for order in queue %}
+    <article class="q-card q-card-{{ order.status }}{% if not order.is_paid %} q-card-unpaid{% endif %}{% if current_order_id == order.id %} is-open{% endif %}"
+             data-status="{{ order.status }}"
+             data-status-url="{% url 'pos:queue_status' order.id %}"
+             hx-get="{% url 'pos:queue_open' order.id %}"
+             hx-target="#order-panel"
+             hx-swap="outerHTML">
+      <header class="q-card-head">
+        <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
+        <span class="q-pills">
+          {% if not order.is_paid %}
+            <span class="pay-pill" title="не оплачено" aria-label="не оплачено">💸</span>
+          {% endif %}
+          <button type="button"
+                  class="status-pill status-{{ order.status }}"
+                  hx-post="{% url 'pos:queue_cycle' order.id %}"
+                  hx-target="#barista-queue"
+                  hx-sync="#barista-queue:abort"
+                  hx-swap="outerHTML"
+                  hx-on:click="event.stopPropagation()">
+            {{ order.barista_label }}
+          </button>
+        </span>
+      </header>
+      <ul class="q-lines">
+        {% for line in order.lines.all %}
+          <li class="q-item">
+            <div class="q-item-row">
+              <span>{{ line.name_snapshot }}</span>
+              {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
+            </div>
+            {% for addon in line|visible_addons %}
+              <p class="q-addon">+ {{ addon.name_snapshot }}{% if addon.price_delta_snapshot %} {{ addon.price_delta_snapshot|rub_delta }}{% endif %}</p>
+            {% endfor %}
+            {% if line.note %}<p class="q-addon">{{ line.note }}</p>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      {% if order.comment %}
+        <p class="q-comment">💬 {{ order.comment }}</p>
+      {% endif %}
+    </article>
+  {% empty %}
+    <p class="queue-empty">Очередь пуста. Заказ появится после «В очередь» или оплаты.</p>
+  {% endfor %}
+</aside>
