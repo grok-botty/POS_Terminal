@@ -384,3 +384,82 @@ class MenuEditorTests(TestCase):
         self.assertContains(page, "овсяное")
         self.assertContains(page, "Один вариант")
         self.assertContains(page, "по умолчанию")
+
+    def test_existing_group_options_do_not_require_reentering_its_name(self):
+        """«Скидки» хранится со slug «скидки»; правка опций не требует названия заново."""
+        created = self.client.post(
+            reverse("catalog:group_save"),
+            data={
+                "name": "Скидки",
+                "slug": "",
+                "selection_mode": "multi",
+                "order": 4,
+            },
+        )
+        group = ModifierGroup.objects.get(name="Скидки")
+        self.assertRedirects(
+            created, reverse("catalog:groups") + f"?group={group.pk}"
+        )
+        self.assertEqual(group.slug, "скидки")
+
+        edit = reverse("catalog:group_save_edit", args=[group.pk])
+        added = self.client.post(
+            edit,
+            data={
+                "name": group.name,
+                "slug": group.slug,
+                "selection_mode": "multi",
+                "order": group.order,
+                "new_name": "студент",
+                "new_price": "-20",
+            },
+        )
+        self.assertRedirects(added, reverse("catalog:groups") + f"?group={group.pk}")
+        option = Modifier.objects.get(group=group, name="студент")
+        self.assertEqual(option.price_delta, Decimal("-20"))
+
+        edited = self.client.post(
+            edit,
+            data={
+                "slug": group.slug,
+                "selection_mode": "multi",
+                "order": group.order,
+                "option_id": [str(option.pk)],
+                f"name_{option.pk}": "сотрудник",
+                f"price_{option.pk}": "-30",
+            },
+        )
+        self.assertRedirects(edited, reverse("catalog:groups") + f"?group={group.pk}")
+        option.refresh_from_db()
+        group.refresh_from_db()
+        self.assertEqual(option.name, "сотрудник")
+        self.assertEqual(option.price_delta, Decimal("-30"))
+        self.assertEqual(group.name, "Скидки")
+
+        deleted = self.client.post(
+            reverse("catalog:modifier_delete", args=[option.pk]),
+            data={"back": f"/catalog/groups/?group={group.pk}"},
+        )
+        self.assertRedirects(deleted, f"/catalog/groups/?group={group.pk}")
+        self.assertFalse(Modifier.objects.filter(pk=option.pk).exists())
+        group.refresh_from_db()
+        self.assertEqual(group.name, "Скидки")
+
+    def test_new_group_still_requires_a_name(self):
+        before = ModifierGroup.objects.count()
+        response = self.client.post(
+            reverse("catalog:group_save"),
+            data={
+                "name": "   ",
+                "slug": "",
+                "selection_mode": "multi",
+                "order": 0,
+                "new_name": "не должна сохраниться",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Укажите название группы")
+        self.assertEqual(ModifierGroup.objects.count(), before)
+        self.assertFalse(
+            Modifier.objects.filter(name="не должна сохраниться").exists()
+        )

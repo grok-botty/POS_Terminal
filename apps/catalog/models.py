@@ -66,7 +66,12 @@ class ModifierGroup(models.Model):
     )
 
     name = models.CharField("Название", max_length=100)
-    slug = models.SlugField("Slug", max_length=100, unique=True)
+    # save() пишет slugify(name, allow_unicode=True): «Скидки» → «скидки».
+    # Без allow_unicode форма отвергает такой slug, и редактор групп
+    # показывает «Укажите название группы», хотя название уже есть.
+    slug = models.SlugField(
+        "Slug", max_length=100, unique=True, allow_unicode=True
+    )
     selection_mode = models.CharField(
         "Режим выбора",
         max_length=10,

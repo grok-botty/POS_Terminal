@@ -395,7 +395,12 @@ def _sync_group_options(request: HttpRequest, group: ModifierGroup) -> None:
 def group_save(request: HttpRequest, pk: int | None = None) -> HttpResponse:
     """Сохранить группу и её опции одним нажатием."""
     instance = get_object_or_404(ModifierGroup, pk=pk) if pk else None
-    form = ModifierGroupForm(request.POST, instance=instance)
+    data = request.POST
+    if instance is not None and not (data.get("name") or "").strip():
+        # Опции уже существующей группы меняются без повторного ввода названия.
+        data = data.copy()
+        data["name"] = instance.name
+    form = ModifierGroupForm(data, instance=instance)
     if not form.is_valid():
         context = _groups_context(request)
         context["group_errors"] = form.errors
