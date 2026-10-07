@@ -774,6 +774,31 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   gap: 8px;
 }
 .queue-head h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.queue-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  border: none;
+  background-color: transparent;
+  color: #1f242e;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0 18px 0 0;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #1f242e 50%),
+    linear-gradient(135deg, #1f242e 50%, transparent 50%);
+  background-position: calc(100% - 8px) 55%, calc(100% - 3px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.queue-switch:focus {
+  outline: 2px solid #2e78d9;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .queue-hint {
   background: #e5edfa;
   color: #2e78d9;
@@ -800,8 +825,21 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 }
 .q-card-in_progress { border: 2px solid #f2b838; }
 .q-card-cancelled { opacity: 0.55; }
-.q-card-unpaid { box-shadow: inset 3px 0 0 #c74747; }
+.q-card-unpaid { border: 2px solid #c74747; }
 .q-card.is-open { outline: 2px solid #2e78d9; outline-offset: 1px; }
+.q-card.q-card-leaving {
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.4s ease, max-height 0.45s ease, margin 0.45s ease, padding 0.45s ease;
+}
+.q-card.q-card-leaving.q-card-leave-go {
+  opacity: 0;
+  max-height: 0 !important;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .q-status-menu {
   position: fixed;
   z-index: 90;
@@ -897,14 +935,34 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .q-lines .q-item::marker { color: #1f242e; }
 .q-card-cancelled .q-lines .q-item::marker { color: #737a8c; }
 .q-item { display: flex; flex-direction: column; gap: 2px; }
+.q-item.is-handed { opacity: 0.45; }
+.q-item.is-handed .q-item-name,
+.q-item.is-handed .q-addon,
+.q-item.is-handed .q-qty { text-decoration: line-through; }
 .q-item-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
 }
+.q-handout {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+.q-handout input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  flex: none;
+  accent-color: #2e78d9;
+  cursor: pointer;
+}
+.q-item-name { min-width: 0; }
 .q-qty { color: #737a8c; font-weight: 400; font-size: 12px; }
 .q-addon { margin: 0; color: #737a8c; font-size: 12px; }
 .q-comment {

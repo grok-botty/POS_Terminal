@@ -15,7 +15,11 @@
 3. Готовность крутится отдельно: не готово → готово → отменено.
    Оплата её не сбрасывает. Кассир выдаёт заказ
    (:attr:`Order.Status.HANDED_OFF`).
-4. В конце смены :func:`apps.orders.services.close_day` фиксирует итоги в
+4. У каждой позиции есть флаг «отдали». Если отмечены все и заказ
+   оплачен, через 5 секунд он сам становится «Готово» — это же время
+   выдачи. Оплаченное «Готово» и любая «Отмена» ещё 13 секунд остаются
+   в основной очереди, затем уходят в «Готовые» или «Отмена».
+5. В конце смены :func:`apps.orders.services.close_day` фиксирует итоги в
    :class:`apps.analytics.models.DailySummary`.
 """
 
@@ -210,6 +214,27 @@ class Order(models.Model):
     paid_at = models.DateTimeField("Оплачен в", null=True, blank=True)
     ready_at = models.DateTimeField("Готов в", null=True, blank=True)
     handed_off_at = models.DateTimeField("Отдан в", null=True, blank=True)
+    cancelled_at = models.DateTimeField("Отменён в", null=True, blank=True)
+    auto_ready_at = models.DateTimeField(
+        "Автоготово с",
+        null=True,
+        blank=True,
+        help_text=(
+            "Момент, когда все позиции отмечены «отдали» и заказ оплачен. "
+            "Через 5 секунд статус становится «Готово», если галочку сняли "
+            "или оплату убрали раньше."
+        ),
+    )
+    main_queue_until = models.DateTimeField(
+        "В основной очереди до",
+        null=True,
+        blank=True,
+        help_text=(
+            "Оплаченное «Готово» и «Отменено» остаются в основной очереди "
+            "до этого момента (13 секунд), затем видны только в «Готовые» "
+            "или «Отмена»."
+        ),
+    )
 
     class Meta:
         verbose_name = "Заказ"
@@ -316,6 +341,11 @@ class OrderLine(models.Model):
     )
     quantity = models.PositiveIntegerField("Количество", default=1)
     note = models.CharField("Заметка к позиции", max_length=200, blank=True)
+    handed_out = models.BooleanField(
+        "Отдали",
+        default=False,
+        help_text="Позицию уже отдали гостю. На карточке очереди это галочка.",
+    )
 
     class Meta:
         verbose_name = "Позиция заказа"

@@ -7,12 +7,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Iterable
 
 from django.db import transaction
-from django.db.models import Case, IntegerField, Q, Sum, When
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.catalog.models import Modifier, ModifierGroup, Product
@@ -25,6 +25,11 @@ CLOSE_PHRASE = "ЗАКРЫТЬ"
 
 # «Выдано» — бариста отметил «Готово» или заказ уже отдан со старого экрана.
 ISSUED_STATUSES = (Order.Status.READY, Order.Status.HANDED_OFF)
+
+# Все позиции «отдали» и заказ оплачен → через столько секунд статус «Готово».
+AUTO_READY_DELAY = timedelta(seconds=5)
+# Оплаченное «Готово» и «Отменено» ещё столько секунд живут в основной очереди.
+MAIN_QUEUE_HOLD = timedelta(seconds=13)
 
 
 class ShiftError(ValueError):
@@ -419,6 +424,7 @@ def add_line(
             )
 
     order.recalc_total()
+    sync_auto_ready(order)
     return line
 
 
@@ -481,6 +487,7 @@ def update_line(
         line.note = note.strip()
         line.save(update_fields=["note"])
     line.order.recalc_total()
+    sync_auto_ready(line.order)
     return line
 
 
@@ -495,6 +502,7 @@ def change_line_quantity(line: OrderLine, quantity: int) -> None:
         line.save(update_fields=["quantity"])
         order = line.order
     order.recalc_total()
+    sync_auto_ready(order)
 
 
 @transaction.atomic
@@ -503,6 +511,7 @@ def remove_line(line: OrderLine) -> None:
     order = line.order
     line.delete()
     order.recalc_total()
+    sync_auto_ready(order)
 
 
 @transaction.atomic
@@ -546,7 +555,29 @@ def pay_order(order: Order) -> Order:
         order.status = Order.Status.IN_PROGRESS
     order.paid_at = timezone.now()
     _attach_open_shift(order)
-    order.save(update_fields=["is_paid", "status", "paid_at", "shift"])
+    # Неоплаченное «Готово» после оплаты ещё 13 секунд остаётся в основной
+    # очереди: кассир только что взял деньги и может поправить статус.
+    if order.status == Order.Status.READY:
+        order.main_queue_until = timezone.now() + MAIN_QUEUE_HOLD
+    order.save(update_fields=["is_paid", "status", "paid_at", "shift", "main_queue_until"])
+    sync_auto_ready(order)
+    return order
+
+
+@transaction.atomic
+def unpay_order(order: Order) -> Order:
+    """Снять оплату, не меняя готовность.
+
+    Пятисекундный автоперевод в «Готово» отменяется. Неоплаченное
+    «Готово» снова считается активным и остаётся в основной очереди.
+    """
+    if not order.is_paid:
+        return order
+    order.is_paid = False
+    order.paid_at = None
+    order.main_queue_until = None
+    order.save(update_fields=["is_paid", "paid_at", "main_queue_until"])
+    sync_auto_ready(order)
     return order
 
 
@@ -575,20 +606,91 @@ _BARISTA_CYCLE = (
 )
 
 
+def _all_lines_handed(order: Order) -> bool:
+    """Все позиции заказа отмечены «отдали». Пустой заказ — нет."""
+    lines = OrderLine.objects.filter(order_id=order.pk)
+    return lines.exists() and not lines.filter(handed_out=False).exists()
+
+
+@transaction.atomic
+def sync_auto_ready(order: Order) -> Order:
+    """Поставить или снять пятисекундный автоперевод в «Готово».
+
+    Отсчёт идёт, только если заказ «не готово», оплачен и у каждой
+    позиции стоит «отдали». Снятие галочки или оплаты обнуляет
+    :attr:`Order.auto_ready_at`, и перевод не случается.
+    """
+    eligible = (
+        order.status == Order.Status.IN_PROGRESS
+        and order.is_paid
+        and _all_lines_handed(order)
+    )
+    if eligible:
+        if order.auto_ready_at is None:
+            order.auto_ready_at = timezone.now()
+            order.save(update_fields=["auto_ready_at"])
+    elif order.auto_ready_at is not None:
+        order.auto_ready_at = None
+        order.save(update_fields=["auto_ready_at"])
+    return order
+
+
+@transaction.atomic
+def set_line_handed_out(line: OrderLine, handed: bool | None = None) -> OrderLine:
+    """Отметить позицию «отдали» или снять отметку.
+
+    ``handed is None`` переключает текущее значение. После сохранения
+    пересчитывается автоперевод заказа в «Готово».
+    """
+    line.handed_out = (not line.handed_out) if handed is None else bool(handed)
+    line.save(update_fields=["handed_out"])
+    sync_auto_ready(line.order)
+    return line
+
+
 @transaction.atomic
 def set_barista_status(order: Order, status: str) -> Order:
     """Поставить готовность сразу: не готово, готово или отменено.
 
     Оплату не меняет. Те же три значения, что у :func:`cycle_barista_status`.
+    Повтор того же статуса ничего не сдвигает: время выдачи и пауза
+    в основной очереди не начинаются заново.
+
+    Оплаченное «Готово» и любое «Отменено» остаются в основной очереди
+    ещё :data:`MAIN_QUEUE_HOLD`. «Готово» без оплаты из неё не уходит.
+    Перевод в «Готово» пишет :attr:`Order.ready_at` — это время выдачи.
     """
     if status not in _BARISTA_CYCLE:
         raise ValueError("Неизвестный статус очереди.")
+    if order.status == status:
+        return order
+    now = timezone.now()
     order.status = status
-    if order.status == Order.Status.READY:
-        order.ready_at = timezone.now()
-    elif order.status == Order.Status.IN_PROGRESS:
+    if status == Order.Status.READY:
+        order.ready_at = now
+        order.cancelled_at = None
+        order.auto_ready_at = None
+        order.main_queue_until = now + MAIN_QUEUE_HOLD if order.is_paid else None
+    elif status == Order.Status.CANCELLED:
+        order.cancelled_at = now
+        order.auto_ready_at = None
+        order.main_queue_until = now + MAIN_QUEUE_HOLD
+    else:
         order.ready_at = None
-    order.save(update_fields=["status", "ready_at"])
+        order.cancelled_at = None
+        order.auto_ready_at = None
+        order.main_queue_until = None
+    order.save(
+        update_fields=[
+            "status",
+            "ready_at",
+            "cancelled_at",
+            "auto_ready_at",
+            "main_queue_until",
+        ]
+    )
+    if status == Order.Status.IN_PROGRESS:
+        sync_auto_ready(order)
     return order
 
 
@@ -605,10 +707,7 @@ def cycle_barista_status(order: Order) -> Order:
 @transaction.atomic
 def mark_ready(order: Order) -> Order:
     """Перевести ``order`` в статус :attr:`Order.Status.READY`."""
-    order.status = Order.Status.READY
-    order.ready_at = timezone.now()
-    order.save(update_fields=["status", "ready_at"])
-    return order
+    return set_barista_status(order, Order.Status.READY)
 
 
 @transaction.atomic
@@ -616,14 +715,22 @@ def mark_all_ready() -> int:
     """Перевести все заказы со статусом ``IN_PROGRESS`` в ``READY``.
 
     Возвращает количество обновлённых заказов. Используется кнопкой
-    «Все готовы» на экране выдачи.
+    «Все готовы» на экране выдачи. Оплаченные получают ту же паузу
+    в основной очереди, что и одиночная отметка «Готово».
     """
     orders = list(Order.objects.filter(status=Order.Status.IN_PROGRESS))
     now = timezone.now()
+    hold = now + MAIN_QUEUE_HOLD
     for order in orders:
         order.status = Order.Status.READY
         order.ready_at = now
-    Order.objects.bulk_update(orders, ["status", "ready_at"])
+        order.cancelled_at = None
+        order.auto_ready_at = None
+        order.main_queue_until = hold if order.is_paid else None
+    Order.objects.bulk_update(
+        orders,
+        ["status", "ready_at", "cancelled_at", "auto_ready_at", "main_queue_until"],
+    )
     return len(orders)
 
 
@@ -641,52 +748,83 @@ def hand_off(order: Order) -> Order:
 @transaction.atomic
 def cancel_order(order: Order) -> Order:
     """Отменить заказ (имеет смысл только до выдачи)."""
-    order.status = Order.Status.CANCELLED
-    order.save(update_fields=["status"])
-    return order
+    return set_barista_status(order, Order.Status.CANCELLED)
 
 
-def barista_queue(*, limit_cancelled: int = 8) -> list[Order]:
-    """Заказы для левой колонки кассы.
+def settle_due_auto_ready(shift: Shift | None = None) -> int:
+    """Перевести в «Готово» заказы, у которых вышли 5 секунд автоотсчёта.
 
-    Сначала «не готово», затем «готово», затем несколько последних
-    «отменено». Черновики и уже отданные заказы сюда не попадают.
-    Открытая смена, если она есть, ограничивает выборку: заказы без смены
-    тоже видны, чтобы касса работала до экрана открытия смены.
+    Вызывается при отрисовке очереди, чтобы после перезагрузки страницы
+    статус совпал с тем, что уже должен был поставить таймер в браузере.
+    Если за это время галочку сняли или оплату убрали, отсчёт гасится
+    и статус не меняется.
     """
-    rank = Case(
-        When(status=Order.Status.IN_PROGRESS, then=0),
-        When(status=Order.Status.READY, then=1),
-        When(status=Order.Status.CANCELLED, then=2),
-        default=9,
-        output_field=IntegerField(),
+    now = timezone.now()
+    due = Order.objects.filter(
+        status=Order.Status.IN_PROGRESS,
+        is_paid=True,
+        auto_ready_at__isnull=False,
+        auto_ready_at__lte=now - AUTO_READY_DELAY,
     )
-    base = Order.objects.filter(
-        status__in=[
-            Order.Status.IN_PROGRESS,
-            Order.Status.READY,
-            Order.Status.CANCELLED,
-        ]
-    )
-    shift = get_open_shift()
     if shift is not None:
-        base = base.filter(Q(shift=shift) | Q(shift__isnull=True))
+        due = due.filter(shift=shift)
+    changed = 0
+    for order in due:
+        if not _all_lines_handed(order):
+            order.auto_ready_at = None
+            order.save(update_fields=["auto_ready_at"])
+            continue
+        set_barista_status(order, Order.Status.READY)
+        changed += 1
+    return changed
 
-    active = list(
-        base.exclude(status=Order.Status.CANCELLED)
-        .annotate(_rank=rank)
+
+def barista_queue(queue: str = "active") -> list[Order]:
+    """Заказы левой колонки для одной из трёх очередей текущей смены.
+
+    * ``active`` — «Очередь»: «не готово», неоплаченное «готово» и те
+      оплаченные «готово» / любые «отменено», у которых ещё не вышла
+      пауза :data:`MAIN_QUEUE_HOLD`.
+    * ``ready`` — «Готовые»: оплаченные «готово» после этой паузы.
+    * ``cancelled`` — «Отмена»: отменённые после той же паузы.
+
+    Неоплаченное «готово» в «Готовые» не попадает: его ещё нужно
+    оплатить, поэтому карточка остаётся в основной очереди. Черновики
+    и уже отданные заказы не показываются. Внутри каждой очереди
+    порядок хронологический, старые сверху. Чужие смены не видны.
+    """
+    shift = get_open_shift()
+    if shift is None:
+        return []
+    if queue not in {"active", "ready", "cancelled"}:
+        queue = "active"
+    settle_due_auto_ready(shift)
+    now = timezone.now()
+    base = (
+        Order.objects.filter(shift=shift)
         .select_related("shift")
         .prefetch_related("lines__modifiers__modifier")
-        .order_by("_rank", "id")
     )
-    cancelled = list(
-        base.filter(status=Order.Status.CANCELLED)
-        .select_related("shift")
-        .prefetch_related("lines__modifiers__modifier")
-        .order_by("-id")[:limit_cancelled]
-    )
-    cancelled.reverse()
-    return active + cancelled
+    if queue == "ready":
+        chosen = base.filter(status=Order.Status.READY, is_paid=True).filter(
+            Q(main_queue_until__isnull=True) | Q(main_queue_until__lte=now)
+        )
+    elif queue == "cancelled":
+        chosen = base.filter(status=Order.Status.CANCELLED).filter(
+            Q(main_queue_until__isnull=True) | Q(main_queue_until__lte=now)
+        )
+    else:
+        chosen = base.filter(
+            Q(status=Order.Status.IN_PROGRESS)
+            | Q(status=Order.Status.READY, is_paid=False)
+            | Q(
+                status=Order.Status.READY,
+                is_paid=True,
+                main_queue_until__gt=now,
+            )
+            | Q(status=Order.Status.CANCELLED, main_queue_until__gt=now)
+        )
+    return list(chosen.order_by("created_at", "id"))
 
 
 def totals_for_today() -> dict[str, Decimal | int]:
