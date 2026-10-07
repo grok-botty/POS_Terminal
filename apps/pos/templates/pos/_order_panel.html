@@ -4,6 +4,13 @@
   {% if order.status != "new" %}
     <p class="editing-note">Из очереди{% if not order.is_paid %} · не оплачено{% else %} · оплачено{% endif %}</p>
   {% endif %}
+  {% if order.payment_clock or order.handout_clock %}
+    <p class="order-clocks">
+      {% if order.payment_clock %}Оплата {{ order.payment_clock }}{% endif %}
+      {% if order.payment_clock and order.handout_clock %} · {% endif %}
+      {% if order.handout_clock %}Выдан {{ order.handout_clock }}{% endif %}
+    </p>
+  {% endif %}
 
   {% if panel_error %}
     <p class="panel-error">{{ panel_error }}</p>

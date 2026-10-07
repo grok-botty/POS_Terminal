@@ -8,7 +8,7 @@
   <header class="stats-head">
     <div>
       <h1>Статистика</h1>
-      <p>Считаем по датам смен, не по часам ноутбука.</p>
+      <p>Даты смен и время от их начала. Часы ноутбука не используем.</p>
     </div>
     <div class="segs">
       <a class="seg {% if period == 'this' %}is-on{% endif %}" href="{% url 'pos:stats' %}?period=this">Эта смена</a>
@@ -74,6 +74,36 @@
       </svg>
     {% else %}
       <p class="muted stats-empty">За эту выборку смен нет.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel revenue-panel">
+    <header class="panel-head">
+      <h2>Нагрузка по времени</h2>
+      <span>заказов за {{ load.bucket_minutes }} мин · время смены</span>
+    </header>
+    {% if load_chart %}
+      <svg class="revenue-chart load-chart" viewBox="0 0 {{ load_chart.width }} {{ load_chart.height }}" role="img" aria-label="Нагрузка по времени смены">
+        <line class="axis" x1="{{ load_chart.left }}" y1="{{ load_chart.top }}" x2="{{ load_chart.left }}" y2="{{ load_chart.baseline }}"></line>
+        <line class="axis" x1="{{ load_chart.left }}" y1="{{ load_chart.baseline }}" x2="{{ load_chart.width }}" y2="{{ load_chart.baseline }}"></line>
+        <text class="tick" x="{{ load_chart.left }}" y="{{ load_chart.top }}" dx="-8" text-anchor="end">{{ load_chart.y_max_label }}</text>
+        {% if load_chart.y_max_label != "0" and load_chart.y_max_label != "1" %}
+          <text class="tick" x="{{ load_chart.left }}" y="{{ load_chart.mid }}" dy="4" dx="-8" text-anchor="end">{{ load_chart.y_mid_label }}</text>
+        {% endif %}
+        <text class="tick" x="{{ load_chart.left }}" y="{{ load_chart.baseline }}" dy="4" dx="-8" text-anchor="end">0</text>
+        {% for point in load_chart.points %}
+          <g>
+            <rect x="{{ point.x }}" y="{{ point.y }}" width="{{ point.w }}" height="{{ point.h }}" rx="3">
+              <title>{{ point.label }} · {{ point.value_label }}</title>
+            </rect>
+            {% if point.show_label %}
+              <text class="tick day" x="{{ point.cx }}" y="{{ load_chart.baseline }}" dy="18" text-anchor="middle">{{ point.label }}</text>
+            {% endif %}
+          </g>
+        {% endfor %}
+      </svg>
+    {% else %}
+      <p class="muted stats-empty">За эту выборку нет заказов с временем оплаты.</p>
     {% endif %}
   </section>
 

@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import string
+from datetime import datetime, time
 from decimal import Decimal
 
 from django.conf import settings
@@ -29,17 +30,64 @@ from django.db import models
 from django.utils import timezone
 
 
-class Shift(models.Model):
-    """Рабочая смена с бизнес-датой, которую задаёт кассир, а не часы ноутбука.
+def shift_relative_datetime(shift, event_at: datetime | None) -> datetime | None:
+    """Вернуть момент события на часах смены.
 
-    Дата вводится на экране «Смена» и больше ниоткуда не подставляется.
-    Поля :attr:`opened_at` и :attr:`closed_at` часами ноутбука не
-    заполняются: ноутбук может врать. Закрытие ставит :attr:`is_open`
+    Формула: вписанное :attr:`Shift.start_time` плюс
+    ``event_at - shift.opened_at``. Оба штампа сняты с часов сервера,
+    поэтому в результат входит только их разность. Абсолютное показание
+    (ноутбук не идёт, пока выключен) никуда не подставляется.
+    """
+    if (
+        shift is None
+        or event_at is None
+        or shift.opened_at is None
+        or shift.start_time is None
+        or shift.business_date is None
+    ):
+        return None
+    opened = shift.opened_at
+    event = event_at
+    if timezone.is_aware(opened) != timezone.is_aware(event):
+        zone = timezone.get_current_timezone()
+        if timezone.is_aware(opened):
+            opened = timezone.make_naive(opened, zone)
+        if timezone.is_aware(event):
+            event = timezone.make_naive(event, zone)
+    elapsed = event - opened
+    return datetime.combine(shift.business_date, shift.start_time) + elapsed
+
+
+def format_shift_clock(moment: datetime | None) -> str:
+    """``ЧЧ:ММ`` без локали. Пустая строка, если момента нет."""
+    if moment is None:
+        return ""
+    return f"{moment.hour:02d}:{moment.minute:02d}"
+
+
+class Shift(models.Model):
+    """Рабочая смена с датой и началом, которые вписывает кассир.
+
+    Дата и :attr:`start_time` вводятся на экране «Смена» и больше
+    ниоткуда не подставляются. :attr:`opened_at` запоминает часы сервера
+    в момент открытия только как ноль отсчёта: время заказа — это
+    начало смены плюс прошедшее с этого нуля (см.
+    :func:`shift_relative_datetime`). Само :attr:`opened_at` нигде не
+    показывается. :attr:`closed_at` по-прежнему не заполняется: ноутбук
+    может врать в абсолютных показаниях. Закрытие ставит :attr:`is_open`
     в ``False`` и запоминает :attr:`closed_by`. Незавершённые заказы
     при этом не отменяются — они остаются историей этой смены.
     """
 
     business_date = models.DateField("Дата смены", db_index=True)
+    start_time = models.TimeField(
+        "Начало смены",
+        default=time(19, 30),
+        help_text=(
+            "Время, которое кассир вписал при открытии. "
+            "К нему прибавляется прошедшее с открытия смены."
+        ),
+    )
     is_open = models.BooleanField("Открыта", default=True, db_index=True)
     opened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -63,7 +111,15 @@ class Shift(models.Model):
         blank=True,
         help_text="Имя на кассе, как его вписали при открытии смены.",
     )
-    opened_at = models.DateTimeField("Открыта в", null=True, blank=True)
+    opened_at = models.DateTimeField(
+        "Открыта в",
+        null=True,
+        blank=True,
+        help_text=(
+            "Часы сервера в момент открытия. Для времени заказов берётся "
+            "только разница с этим моментом, само значение не показывается."
+        ),
+    )
     closed_at = models.DateTimeField("Закрыта в", null=True, blank=True)
 
     class Meta:
@@ -208,6 +264,34 @@ class Order(models.Model):
             return 0
         end = self.handed_off_at or self.ready_at or timezone.now()
         return int((end - self.paid_at).total_seconds())
+
+    def payment_moment(self) -> datetime | None:
+        """Момент оплаты на часах смены, либо ``None``.
+
+        Это :attr:`Shift.start_time` плюс время от :attr:`Shift.opened_at`
+        до :attr:`paid_at`. Абсолютные часы ноутбука в результат не входят.
+        """
+        return shift_relative_datetime(self.shift, self.paid_at)
+
+    def payment_clock(self) -> str:
+        """Оплата как ``ЧЧ:ММ`` на часах смены. Пустая строка, если времени нет."""
+        return format_shift_clock(self.payment_moment())
+
+    def handout_moment(self) -> datetime | None:
+        """Момент выдачи: заказ перевели в «Готово» (выдан) или «Отдан».
+
+        Берётся :attr:`ready_at`. Если его нет, а статус уже «Отдан»,
+        используется :attr:`handed_off_at`. Дальше та же формула, что у
+        :meth:`payment_moment`.
+        """
+        stamp = self.ready_at
+        if stamp is None and self.status == self.Status.HANDED_OFF:
+            stamp = self.handed_off_at
+        return shift_relative_datetime(self.shift, stamp)
+
+    def handout_clock(self) -> str:
+        """Выдача как ``ЧЧ:ММ`` на часах смены. Пустая строка, если заказ ещё не выдан."""
+        return format_shift_clock(self.handout_moment())
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         who = self.guest_name or "—"

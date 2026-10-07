@@ -25,11 +25,13 @@ def _queue_context() -> dict:
                 Order.Status.READY,
             ]
         )
+        .select_related("shift")
         .prefetch_related("lines__modifiers")
         .order_by("paid_at")
     )
     handed = (
         Order.objects.filter(status=Order.Status.HANDED_OFF)
+        .select_related("shift")
         .order_by("-handed_off_at")[:10]
     )
     return {"active_orders": list(active), "recent_handoffs": list(handed)}

@@ -25,6 +25,13 @@
             {% endfor %}
           </ul>
           {% if order.comment %}<p class="order-comment">✎ {{ order.comment }}</p>{% endif %}
+          {% if order.payment_clock or order.handout_clock %}
+            <p class="muted">
+              {% if order.payment_clock %}оплата {{ order.payment_clock }}{% endif %}
+              {% if order.payment_clock and order.handout_clock %} · {% endif %}
+              {% if order.handout_clock %}выдан {{ order.handout_clock }}{% endif %}
+            </p>
+          {% endif %}
           <footer>
             <span class="tag tag-{{ order.fulfilment }}">
               {{ order.get_fulfilment_display }}
@@ -65,7 +72,7 @@
             <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
             <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
           </header>
-          <p class="muted">{{ order.handed_off_at|time:"H:i" }}</p>
+          {% if order.handout_clock %}<p class="muted">выдан {{ order.handout_clock }}</p>{% endif %}
         </li>
       {% empty %}
         <li class="empty">Пока пусто.</li>

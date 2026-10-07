@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import csv
 import random
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from functools import wraps
 
@@ -106,6 +106,18 @@ def _parse_iso_date(raw: str | None):
         return None
 
 
+def _parse_hhmm(raw: str | None) -> time | None:
+    """Время из ``input type=time``: ``ЧЧ:ММ`` или ``ЧЧ:ММ:СС``."""
+    if not raw:
+        return None
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt).time()
+        except ValueError:
+            continue
+    return None
+
+
 _BAR_COLORS = (
     "#2e78d9",
     "#f0a04b",
@@ -190,7 +202,11 @@ def _forget_current_order(request: HttpRequest) -> None:
 
 def _reload_order(order: Order) -> Order:
     """Перечитать заказ: после мутации префетч-кэш позиций уже устарел."""
-    return Order.objects.prefetch_related("lines__modifiers__modifier").get(pk=order.pk)
+    return (
+        Order.objects.select_related("shift")
+        .prefetch_related("lines__modifiers__modifier")
+        .get(pk=order.pk)
+    )
 
 
 def _order_panel(request: HttpRequest, order: Order | None = None) -> HttpResponse:
@@ -313,9 +329,15 @@ def shift_screen(request: HttpRequest) -> HttpResponse:
     current = order_services.get_open_shift()
     if request.method == "POST" and request.POST.get("action") == "open":
         business_date = _parse_iso_date(request.POST.get("business_date"))
+        start_time = _parse_hhmm(request.POST.get("start_time"))
         try:
+            if not isinstance(business_date, date):
+                raise order_services.ShiftError("Укажите дату смены.")
+            if start_time is None:
+                raise order_services.ShiftError("Укажите время начала смены.")
             opened = order_services.open_shift(
                 business_date=business_date,
+                start_time=start_time,
                 opened_by=request.user,
                 cashier_name=request.POST.get("cashier_name", ""),
             )
@@ -327,6 +349,7 @@ def shift_screen(request: HttpRequest) -> HttpResponse:
                     "mode": "open",
                     "error": str(exc),
                     "posted_date": request.POST.get("business_date", ""),
+                    "posted_start": request.POST.get("start_time", ""),
                     "cashier_name": _cashier_prefill(
                         request, request.POST.get("cashier_name", "")
                     ),
@@ -334,7 +357,7 @@ def shift_screen(request: HttpRequest) -> HttpResponse:
             )
         messages.success(
             request,
-            f"Смена открыта на {opened.business_date:%d.%m.%Y}.",
+            f"Смена открыта на {opened.business_date:%d.%m.%Y}, начало {opened.start_time:%H:%M}.",
         )
         return redirect("pos:register")
 
@@ -345,6 +368,7 @@ def shift_screen(request: HttpRequest) -> HttpResponse:
             {
                 "mode": "open",
                 "posted_date": "",
+                "posted_start": "",
                 "cashier_name": _cashier_prefill(request),
             },
         )
@@ -694,8 +718,72 @@ def _px(value) -> str:
     return f"{number:.1f}"
 
 
+def _count_label(value) -> str:
+    """Целое или один знак после точки, без локальной запятой."""
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.1f}"
+
+
+def _bar_chart(rows: list[dict], *, value_key: str) -> dict | None:
+    """Геометрия столбцов: подпись по X, число ``value_key`` по Y."""
+    if not rows:
+        return None
+    width, height = 640, 220
+    left, right, top, bottom = 72, 16, 16, 36
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+    baseline = top + plot_h
+    amounts = [row[value_key] for row in rows]
+    peak = max(amounts)
+    count = len(rows)
+    slot = plot_w / count
+    bar_w = min(28, slot * 0.62)
+    stride = 1 if count <= 14 else max(1, (count + 7) // 8)
+    points = []
+    for index, row in enumerate(rows):
+        value = row[value_key]
+        bar_h = float(value / peak) * plot_h if peak > 0 else 0.0
+        center = left + slot * index + slot / 2
+        points.append({
+            "x": _px(center - bar_w / 2),
+            "y": _px(baseline - bar_h),
+            "w": _px(bar_w),
+            "h": _px(bar_h),
+            "cx": _px(center),
+            "label": row["label"],
+            "show_label": index % stride == 0 or index == count - 1,
+            "value": value,
+            "value_label": _count_label(value),
+        })
+    return {
+        "width": _px(width),
+        "height": _px(height),
+        "left": _px(left),
+        "baseline": _px(baseline),
+        "top": _px(top),
+        "mid": _px(top + plot_h / 2),
+        "y_max": peak,
+        "y_mid": peak / 2,
+        "y_max_label": _count_label(peak),
+        "y_mid_label": _count_label(peak / 2),
+        "points": points,
+    }
+
+
 def _revenue_chart(by_date: list[dict]) -> dict | None:
-    """Геометрия SVG: дата смены по X, выручка по Y. Часов нет."""
+    """Геометрия SVG: дата смены по X, выручка по Y."""
+    rows = [
+        {"label": f"{row['date'].day} {_CHART_MONTHS[row['date'].month - 1]}", "revenue": row["revenue"]}
+        for row in by_date
+    ]
+    chart = _bar_chart(rows, value_key="revenue")
+    if chart is None:
+        return None
+    for point, row in zip(chart["points"], rows):
+        point["revenue"] = row["revenue"]
+    return chart
     if not by_date:
         return None
     width, height = 640, 220
@@ -761,19 +849,26 @@ def _stats_selection(request: HttpRequest):
     stats = order_services.aggregate_shift_stats(shifts)
     for index, row in enumerate(stats["items"]):
         row["color"] = _BAR_COLORS[index % len(_BAR_COLORS)]
+    load = order_services.load_over_time(shifts)
     return {
         "period": period,
         "date_from": date_from,
         "date_to": date_to,
         "stats": stats,
         "chart": _revenue_chart(stats["by_date"]),
+        "load": load,
+        "load_chart": _bar_chart(load["points"], value_key="count"),
     }
 
 
 @login_required(login_url="accounts:login")
 @open_shift_required
 def stats(request: HttpRequest) -> HttpResponse:
-    """Статистика по бизнес-датам смен, без разбивки по часам."""
+    """Статистика по бизнес-датам смен и нагрузка по времени смены.
+
+    Часы ноутбука на графике нагрузки не используются: корзины считаются
+    по времени оплаты относительно начала смены.
+    """
     return render(request, "pos/stats.html", _stats_selection(request))
 
 
@@ -788,6 +883,8 @@ def stats_csv(request: HttpRequest) -> HttpResponse:
     writer = csv.writer(response)
     writer.writerow([
         "Дата смены",
+        "Время оплаты",
+        "Время выдачи",
         "Заказ",
         "Гость",
         "Статус",
@@ -810,6 +907,8 @@ def stats_csv(request: HttpRequest) -> HttpResponse:
         addons = ", ".join(m.name_snapshot for m in line.modifiers.all())
         writer.writerow([
             order.shift.business_date.isoformat() if order.shift_id else "",
+            order.payment_clock(),
+            order.handout_clock(),
             order.short_code,
             order.guest_name,
             order.barista_label() if order.status != Order.Status.HANDED_OFF else "Отдан",

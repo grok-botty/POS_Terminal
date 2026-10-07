@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Iterable
 
@@ -40,18 +40,36 @@ def get_open_shift() -> Shift | None:
     return Shift.objects.filter(is_open=True).order_by("-id").first()
 
 
-@transaction.atomic
-def open_shift(*, business_date: date, opened_by=None, cashier_name: str = "") -> Shift:
-    """Открыть смену на вручную указанную дату.
+# Вечерняя смена: часы до полудня на оси графика идут после полуночи.
+_NOON_MINUTES = 12 * 60
+_DAY_MINUTES = 24 * 60
 
-    Системные часы не читаются: ``business_date`` обязана прийти от
-    кассира. ``opened_at`` остаётся пустым — ноутбук с сломанными часами
-    не должен оставлять ложную метку. Вторая открытая смена запрещена.
+
+@transaction.atomic
+def open_shift(
+    *,
+    business_date: date,
+    opened_by=None,
+    cashier_name: str = "",
+    start_time: time | None = None,
+) -> Shift:
+    """Открыть смену на вручную указанные дату и время начала.
+
+    Бизнес-дата и ``start_time`` приходят от кассира. Если время начала
+    не передали (вызов из shell или теста), ставится 19:30 — то же
+    значение, что в поле на экране. ``opened_at`` записывает часы
+    сервера как ноль отсчёта: дальше из него берётся только разность
+    с оплатой и выдачей, само значение не показывается. ``closed_at``
+    по-прежнему пустой. Вторая открытая смена запрещена.
     ``cashier_name`` — подпись в шапке; если её не прислали, берётся логин.
     Стартовой кассы нет.
     """
     if not isinstance(business_date, date):
         raise ShiftError("Укажите дату смены.")
+    if start_time is None:
+        start_time = time(19, 30)
+    elif not isinstance(start_time, time):
+        raise ShiftError("Укажите время начала смены.")
     if Shift.objects.filter(is_open=True).exists():
         raise ShiftError("Смена уже открыта. Сначала закройте её.")
     name = (cashier_name or "").strip()
@@ -59,9 +77,11 @@ def open_shift(*, business_date: date, opened_by=None, cashier_name: str = "") -
         name = (opened_by.get_full_name() or opened_by.get_username() or "").strip()
     return Shift.objects.create(
         business_date=business_date,
+        start_time=start_time,
         is_open=True,
         opened_by=opened_by if getattr(opened_by, "is_authenticated", True) else None,
         cashier_name=name[:100],
+        opened_at=timezone.now(),
     )
 
 
@@ -261,6 +281,78 @@ def aggregate_shift_stats(shifts: Iterable[Shift]) -> dict:
         "addons": addons[:8],
         "by_date": by_date,
     }
+
+
+def _evening_minutes(moment: datetime) -> int:
+    """Минуты от полуночи; утро переносится на следующие сутки.
+
+    Смена «6ки» начинается вечером и может перейти через полночь,
+    поэтому 00:30 стоит на оси после 23:30, а не перед 19:30.
+    """
+    minutes = moment.hour * 60 + moment.minute
+    if minutes < _NOON_MINUTES:
+        minutes += _DAY_MINUTES
+    return minutes
+
+
+def _hhmm(axis_minutes: int) -> str:
+    wrapped = axis_minutes % _DAY_MINUTES
+    return f"{wrapped // 60:02d}:{wrapped % 60:02d}"
+
+
+def load_over_time(shifts: Iterable[Shift]) -> dict:
+    """Число оплаченных заказов по корзинам времени смены.
+
+    Время — :meth:`apps.orders.models.Order.payment_moment`: вписанное
+    начало плюс прошедшее с открытия. Корзина 30 минут; если от начала
+    смены до последнего заказа больше 8 часов — 60. Ось начинается с
+    самого раннего :attr:`~apps.orders.models.Shift.start_time` выборки,
+    пустые корзины до последнего заказа остаются. Черновики и заказы
+    без нуля отсчёта не входят. Отменённые, но оплаченные, входят.
+    Несколько смен складываются по одним и тем же часам вечера.
+    """
+    empty = {"bucket_minutes": 30, "points": []}
+    shift_list = [shift for shift in shifts if shift is not None]
+    if not shift_list:
+        return empty
+    orders = (
+        Order.objects.filter(shift_id__in=[shift.id for shift in shift_list], is_paid=True)
+        .exclude(status=Order.Status.NEW)
+        .exclude(paid_at=None)
+        .select_related("shift")
+    )
+    stamps = []
+    for order in orders:
+        moment = order.payment_moment()
+        if moment is not None:
+            stamps.append(_evening_minutes(moment))
+    if not stamps:
+        return empty
+
+    starts = [
+        _evening_minutes(datetime.combine(shift.business_date, shift.start_time))
+        for shift in shift_list
+        if shift.start_time is not None and shift.business_date is not None
+    ]
+    raw_first = min(stamps)
+    if starts:
+        raw_first = min(raw_first, min(starts))
+    raw_last = max(stamps)
+    span = max(0, raw_last - raw_first)
+    bucket = 60 if span > 8 * 60 else 30
+    origin = min(starts) if starts else (raw_first // bucket) * bucket
+    if raw_first < origin:
+        origin -= ((origin - raw_first + bucket - 1) // bucket) * bucket
+    last_index = (raw_last - origin) // bucket
+    counts: dict[int, int] = {}
+    for stamp in stamps:
+        index = (stamp - origin) // bucket
+        counts[index] = counts.get(index, 0) + 1
+    points = [
+        {"label": _hhmm(origin + index * bucket), "count": counts.get(index, 0)}
+        for index in range(last_index + 1)
+    ]
+    return {"bucket_minutes": bucket, "points": points}
 
 
 def current_business_date():
@@ -583,11 +675,13 @@ def barista_queue(*, limit_cancelled: int = 8) -> list[Order]:
     active = list(
         base.exclude(status=Order.Status.CANCELLED)
         .annotate(_rank=rank)
+        .select_related("shift")
         .prefetch_related("lines__modifiers__modifier")
         .order_by("_rank", "id")
     )
     cancelled = list(
         base.filter(status=Order.Status.CANCELLED)
+        .select_related("shift")
         .prefetch_related("lines__modifiers__modifier")
         .order_by("-id")[:limit_cancelled]
     )

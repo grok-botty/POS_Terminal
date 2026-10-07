@@ -839,6 +839,15 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   gap: 8px;
 }
 .q-name { font-weight: 700; font-size: 15px; }
+.q-times {
+  margin: -4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #737a8c;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
 .q-pills { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .pay-pill {
   display: inline-flex;
@@ -1150,6 +1159,12 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   font-weight: 700;
   color: #c74747;
 }
+.order-clocks {
+  margin: -2px 0 0;
+  color: #737a8c;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
 .cart-total span { font-size: 15px; font-weight: 600; }
 .cart-total strong { font-size: 20px; font-weight: 700; }
 .pay-btn {
@@ -1310,7 +1325,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 }
 .shift-credit a:hover { text-decoration: underline; }
 .shift-card {
-  width: min(440px, 100%);
+  width: min(480px, 100%);
   background: #fff;
   border: 1px solid #e6ebf3;
   border-radius: 16px;
@@ -1334,6 +1349,9 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   font-size: 13.5px;
 }
 .shift-form { display: flex; flex-direction: column; gap: 12px; }
+.shift-when { display: grid; grid-template-columns: 1.35fr 0.85fr; gap: 12px; }
+.shift-when .field { min-width: 0; }
+.shift-when input { width: 100%; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field span { font-size: 13px; color: #5c6578; }
 .field input {
