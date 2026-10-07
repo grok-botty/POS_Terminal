@@ -40,6 +40,21 @@ class OrderServicesTests(TestCase):
         )
         self.latte.modifier_groups.add(self.milk, self.syrup)
 
+    def test_place_defaults_to_here(self) -> None:
+        here = services.create_order()
+        self.assertEqual(here.fulfilment, Order.Fulfilment.HERE)
+        self.assertFalse(here.is_takeaway())
+        self.assertEqual(here.place_mark(), "☕")
+        self.assertEqual(here.place_title(), "здесь")
+
+        away = services.create_order(fulfilment=Order.Fulfilment.TO_GO)
+        self.assertTrue(away.is_takeaway())
+        self.assertEqual(away.place_mark(), "🏃")
+        self.assertEqual(away.place_title(), "на вынос")
+        services.update_order_meta(away, fulfilment=Order.Fulfilment.HERE)
+        away.refresh_from_db()
+        self.assertFalse(away.is_takeaway())
+
     def test_add_line_computes_total_with_modifiers(self) -> None:
         order = services.create_order()
         services.add_line(

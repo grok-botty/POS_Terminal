@@ -12,6 +12,9 @@
           <header>
             <span class="order-code">№{{ order.short_code }}</span>
             <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
+            <span class="place-pill{% if order.is_takeaway %} place-pill-to_go{% else %} place-pill-here{% endif %}"
+                  title="{{ order.place_title }}"
+                  aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
             <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
           </header>
           <ul class="card-lines">
@@ -33,9 +36,6 @@
             </p>
           {% endif %}
           <footer>
-            <span class="tag tag-{{ order.fulfilment }}">
-              {{ order.get_fulfilment_display }}
-            </span>
             <div class="card-actions">
               {% if order.status == 'in_progress' %}
                 <form hx-post="{% url 'orders:ready' order.id %}" hx-target="#queue" hx-swap="outerHTML">
@@ -70,6 +70,9 @@
           <header>
             <span class="order-code">№{{ order.short_code }}</span>
             <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
+            <span class="place-pill{% if order.is_takeaway %} place-pill-to_go{% else %} place-pill-here{% endif %}"
+                  title="{{ order.place_title }}"
+                  aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
             <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
           </header>
           {% if order.handout_clock %}<p class="muted">выдан {{ order.handout_clock }}</p>{% endif %}
