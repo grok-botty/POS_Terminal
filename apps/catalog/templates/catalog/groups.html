@@ -58,7 +58,7 @@
         {% endif %}
         <label>
           <span>Название</span>
-          <input type="text" name="name" required value="{% if selected_group and not creating_group %}{{ selected_group.name }}{% endif %}">
+          <input type="text" name="name" {% if creating_group or not selected_group %}required{% endif %} value="{% if selected_group and not creating_group %}{{ selected_group.name }}{% endif %}">
         </label>
         <div class="edit-block">
           <div class="edit-block-head"><span>Режим выбора</span></div>
