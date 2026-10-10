@@ -34,7 +34,18 @@
              hx-target="#order-panel"
              hx-swap="outerHTML">
       <header class="q-card-head">
-        <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
+        <span class="q-lead">
+          <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
+          <span class="place-pill{% if order.is_takeaway %} place-pill-to_go{% else %} place-pill-here{% endif %}"
+                title="{{ order.place_title }}"
+                aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
+          {% if order.payment_clock or order.handout_clock %}
+            <span class="q-times">
+              {% if order.payment_clock %}<span>оплата {{ order.payment_clock }}</span>{% endif %}
+              {% if order.handout_clock %}<span>выдан {{ order.handout_clock }}</span>{% endif %}
+            </span>
+          {% endif %}
+        </span>
         <span class="q-pills">
           {% if not order.is_paid %}
             <span class="pay-pill" title="не оплачено" aria-label="не оплачено">💸</span>
@@ -50,12 +61,6 @@
           </button>
         </span>
       </header>
-      {% if order.payment_clock or order.handout_clock %}
-        <p class="q-times">
-          {% if order.payment_clock %}<span>оплата {{ order.payment_clock }}</span>{% endif %}
-          {% if order.handout_clock %}<span>выдан {{ order.handout_clock }}</span>{% endif %}
-        </p>
-      {% endif %}
       <ul class="q-lines">
         {% for line in order.lines.all %}
           <li class="q-item{% if line.handed_out %} is-handed{% endif %}">

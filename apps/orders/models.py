@@ -275,6 +275,18 @@ class Order(models.Model):
             return ""
         return "не оплачено"
 
+    def is_takeaway(self) -> bool:
+        """Заказ «на вынос». По умолчанию заказ «здесь»."""
+        return self.fulfilment == self.Fulfilment.TO_GO
+
+    def place_mark(self) -> str:
+        """Знак на карточке очереди: 🏃 на вынос, ☕ здесь."""
+        return "🏃" if self.is_takeaway() else "☕"
+
+    def place_title(self) -> str:
+        """Подсказка знака: «на вынос» или «здесь»."""
+        return "на вынос" if self.is_takeaway() else "здесь"
+
     def is_active(self) -> bool:
         """Вернуть ``True``, если заказ должен показываться в активной очереди."""
         return self.status in {

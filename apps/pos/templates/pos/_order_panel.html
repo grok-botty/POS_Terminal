@@ -84,17 +84,21 @@
     {% endif %}
   </div>
 
-  <form class="takeaway"
+  <form class="place-form"
         hx-post="{% url 'pos:order_meta' %}"
         hx-trigger="change"
         hx-swap="none">
     {% csrf_token %}
-    <input type="hidden" name="fulfilment_touched" value="1" />
-    <span>С собой</span>
-    <label class="switch">
-      <input type="checkbox" name="to_go" {% if order.fulfilment == 'to_go' %}checked{% endif %} />
-      <span class="switch-ui"></span>
-    </label>
+    <div class="place-toggle" role="radiogroup" aria-label="Где заказ">
+      <label class="place-opt">
+        <input type="radio" name="fulfilment" value="here"{% if order.fulfilment != "to_go" %} checked{% endif %} />
+        <span>здесь</span>
+      </label>
+      <label class="place-opt">
+        <input type="radio" name="fulfilment" value="to_go"{% if order.fulfilment == "to_go" %} checked{% endif %} />
+        <span>на вынос</span>
+      </label>
+    </div>
   </form>
 
   <div class="cart-total">

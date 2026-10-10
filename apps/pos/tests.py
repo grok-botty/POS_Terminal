@@ -289,7 +289,9 @@ class RegisterScreenTests(TestCase):
         self.assertContains(response, "Из очереди")
         self.assertContains(response, "не оплачено")
         self.assertContains(response, "Новый чек")
-        self.assertContains(response, 'name="to_go" checked')
+        self.assertContains(response, 'value="to_go" checked')
+        self.assertContains(response, ">на вынос<")
+        self.assertContains(response, ">здесь<")
         self.assertContains(response, ">2<")
         self.assertNotContains(response, "В очередь")
 
@@ -343,6 +345,42 @@ class RegisterScreenTests(TestCase):
         response = self.client.get(reverse("pos:line_edit", args=[line.id]))
         self.assertContains(response, "Латте · допы")
         self.assertContains(response, "В заказ")
+
+    def test_place_toggle_defaults_to_here_and_edits_a_reopened_order(self):
+        panel = self.client.get(reverse("pos:register"))
+        self.assertContains(panel, 'name="fulfilment" value="here" checked')
+        self.assertContains(panel, ">здесь<")
+        self.assertContains(panel, ">на вынос<")
+        self.assertNotContains(panel, 'name="fulfilment" value="here" disabled')
+        self.assertNotContains(panel, 'name="fulfilment" value="to_go" disabled')
+        draft = Order.objects.get(status=Order.Status.NEW)
+        self.assertEqual(draft.fulfilment, Order.Fulfilment.HERE)
+        self.assertFalse(draft.is_takeaway())
+
+        switched = self.client.post(
+            reverse("pos:order_meta"), {"fulfilment": Order.Fulfilment.TO_GO}
+        )
+        self.assertEqual(switched.status_code, 204)
+        draft.refresh_from_db()
+        self.assertTrue(draft.is_takeaway())
+
+        services.add_line(draft, self.espresso, quantity=1)
+        services.enqueue_order(draft)
+        opened = self.client.get(reverse("pos:queue_open", args=[draft.id]))
+        self.assertContains(opened, 'value="to_go" checked')
+        self.assertNotContains(opened, 'name="fulfilment" value="to_go" disabled')
+
+        edited = self.client.post(
+            reverse("pos:order_meta"), {"fulfilment": Order.Fulfilment.HERE}
+        )
+        self.assertEqual(edited.status_code, 204)
+        draft.refresh_from_db()
+        self.assertFalse(draft.is_takeaway())
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertContains(queue, "place-pill-here")
+        self.assertContains(queue, 'title="здесь"')
+        self.assertContains(queue, "☕")
+        self.assertNotContains(queue, "place-pill-to_go")
 
 
 class ShiftScreenTests(TestCase):
@@ -655,6 +693,28 @@ class StatsByShiftDateTests(TestCase):
         self.assertIn("20:10", body)
         self.assertNotIn("03:17", body)
 
+    def test_csv_has_a_takeaway_column(self):
+        import csv
+        import io
+
+        evening = Order.objects.get(shift=self.late, status=Order.Status.READY)
+        evening.guest_name = "Маша"
+        evening.fulfilment = Order.Fulfilment.TO_GO
+        evening.save(update_fields=["guest_name", "fulfilment"])
+        dropped = Order.objects.get(shift=self.late, status=Order.Status.CANCELLED)
+        dropped.guest_name = "Петя"
+        dropped.save(update_fields=["guest_name"])
+
+        exported = self.client.get(reverse("pos:stats_csv") + "?period=this")
+        rows = list(csv.reader(io.StringIO(exported.content.decode("utf-8-sig"))))
+        header = rows[0]
+        self.assertIn("На вынос", header)
+        takeaway = header.index("На вынос")
+        guest = header.index("Гость")
+        by_guest = {row[guest]: row[takeaway] for row in rows[1:]}
+        self.assertEqual(by_guest["Маша"], "да")
+        self.assertEqual(by_guest["Петя"], "нет")
+
 
 class HandoutQueueScreenTests(TestCase):
     """Галочки, автоготово и переключение очередей на экране кассы."""
@@ -714,6 +774,77 @@ class HandoutQueueScreenTests(TestCase):
         rule = css.split(".q-card-unpaid", 1)[1].split("}", 1)[0]
         self.assertIn("border: 2px solid #c74747", rule)
         self.assertNotIn("inset", rule)
+
+    def test_place_pills_show_on_every_queue_card(self):
+        opened = datetime(2026, 10, 5, 16, 0, tzinfo=dt_timezone.utc)
+        self.shift.opened_at = opened
+        self.shift.start_time = time(19, 30)
+        self.shift.save(update_fields=["opened_at", "start_time"])
+
+        with patch("apps.orders.services.timezone.now", return_value=opened + timedelta(minutes=12)):
+            here = self._enqueue("Взале")
+            away = self._enqueue("Навынос")
+            services.update_order_meta(away, fulfilment=Order.Fulfilment.TO_GO)
+            ready = self._enqueue("Готовый")
+            services.update_order_meta(ready, fulfilment=Order.Fulfilment.TO_GO)
+            services.mark_ready(ready)
+            dropped = self._enqueue("Снятый", pay=False)
+            services.cancel_order(dropped)
+        Order.objects.filter(pk__in=[ready.pk, dropped.pk]).update(
+            main_queue_until=datetime(2020, 1, 1, tzinfo=dt_timezone.utc)
+        )
+
+        active = self.client.get(reverse("pos:queue_fragment"))
+        active_body = active.content.decode()
+
+        def lead(name: str) -> str:
+            marker = f'<span class="q-name">{name}</span>'
+            start = active_body.index(marker)
+            return active_body[start:active_body.index("q-pills", start)]
+
+        here_lead = lead("Взале")
+        away_lead = lead("Навынос")
+        self.assertIn("place-pill-here", here_lead)
+        self.assertIn('title="здесь"', here_lead)
+        self.assertIn("☕", here_lead)
+        self.assertIn("q-times", here_lead)
+        self.assertLess(here_lead.index("place-pill-here"), here_lead.index("оплата"))
+        self.assertIn("place-pill-to_go", away_lead)
+        self.assertIn('title="на вынос"', away_lead)
+        self.assertIn("🏃", away_lead)
+        self.assertLess(away_lead.index("place-pill-to_go"), away_lead.index("оплата"))
+
+        ready_queue = self.client.get(reverse("pos:queue_fragment") + "?queue=ready")
+        self.assertContains(ready_queue, "Готовый")
+        self.assertContains(ready_queue, "place-pill-to_go")
+        self.assertContains(ready_queue, 'title="на вынос"')
+        self.assertContains(ready_queue, "🏃")
+        self.assertNotContains(ready_queue, "Взале")
+
+        cancelled = self.client.get(reverse("pos:queue_fragment") + "?queue=cancelled")
+        self.assertContains(cancelled, "Снятый")
+        self.assertContains(cancelled, "place-pill-here")
+        self.assertContains(cancelled, 'title="здесь"')
+        self.assertContains(cancelled, "☕")
+        self.assertNotContains(cancelled, "Навынос")
+
+        css = (Path(settings.BASE_DIR) / "static/css/app.css").read_text()
+        pill = css.split(".place-pill {", 1)[1].split("}", 1)[0]
+        here_rule = css.split(".place-pill-here", 1)[1].split("}", 1)[0]
+        away_rule = css.split(".place-pill-to_go", 1)[1].split("}", 1)[0]
+        self.assertIn("font-size: 16px", pill)
+        self.assertIn("border-radius: 999px", pill)
+        self.assertIn("#e3f0c4", here_rule)
+        self.assertIn("#d3e4f8", away_rule)
+
+        services.hand_off(here)
+        screen = self.client.get(reverse("orders:queue"))
+        self.assertContains(screen, "Навынос")
+        self.assertContains(screen, "Взале")
+        self.assertContains(screen, "place-pill-to_go")
+        self.assertContains(screen, "place-pill-here")
+        self.assertContains(screen, 'title="на вынос"')
+        self.assertContains(screen, 'title="здесь"')
 
     def test_queue_switch_scopes_to_the_shift_and_sorts_oldest_first(self):
         t0 = datetime(2026, 10, 7, 12, 0, tzinfo=dt_timezone.utc)

@@ -604,7 +604,7 @@ def line_remove(request: HttpRequest, line_id: int) -> HttpResponse:
 @open_shift_required
 @require_http_methods(["POST"])
 def order_meta(request: HttpRequest) -> HttpResponse:
-    """Обновить имя гостя, комментарий и «с собой». Панель не перерисовываем."""
+    """Обновить имя гостя, комментарий и «здесь» / «на вынос». Панель не перерисовываем."""
     order = _get_or_create_current_order(request)
     fulfilment = None
     if request.POST.get("fulfilment_touched"):
@@ -927,6 +927,7 @@ def stats_csv(request: HttpRequest) -> HttpResponse:
         "Гость",
         "Статус",
         "Оплачен",
+        "На вынос",
         "Позиция",
         "Кол-во",
         "Допы",
@@ -951,6 +952,7 @@ def stats_csv(request: HttpRequest) -> HttpResponse:
             order.guest_name,
             order.barista_label() if order.status != Order.Status.HANDED_OFF else "Отдан",
             "да" if order.is_paid else "нет",
+            "да" if order.is_takeaway() else "нет",
             line.name_snapshot,
             line.quantity,
             addons,
