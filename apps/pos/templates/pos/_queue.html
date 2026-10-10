@@ -1,19 +1,35 @@
 {% load pos_extras %}
 <aside id="barista-queue"
        class="queue-col"
-       hx-get="{% url 'pos:queue_fragment' %}"
+       data-queue="{{ queue_name }}"
+       hx-get="{% url 'pos:queue_fragment' %}?queue={{ queue_name }}"
        hx-trigger="every 5s, refreshQueue from:body"
        hx-sync="this:drop"
        hx-swap="outerHTML">
   <header class="queue-head">
-    <h2>Очередь</h2>
+    <select name="queue"
+            class="queue-switch"
+            aria-label="Очередь"
+            hx-get="{% url 'pos:queue_fragment' %}"
+            hx-include="this"
+            hx-target="#barista-queue"
+            hx-swap="outerHTML"
+            hx-trigger="change">
+      {% for value, label in queue_options %}
+        <option value="{{ value }}" {% if queue_name == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
     <span class="queue-hint">клик меняет статус</span>
   </header>
 
   {% for order in queue %}
     <article class="q-card q-card-{{ order.status }}{% if not order.is_paid %} q-card-unpaid{% endif %}{% if current_order_id == order.id %} is-open{% endif %}"
+             data-order-id="{{ order.id }}"
              data-status="{{ order.status }}"
-             data-status-url="{% url 'pos:queue_status' order.id %}"
+             data-paid="{% if order.is_paid %}1{% else %}0{% endif %}"
+             {% if queue_name == "active" and order.auto_ready_at %}data-auto-ready-at="{{ order.auto_ready_at|date:'c' }}"{% endif %}
+             {% if queue_name == "active" and order.main_queue_until %}data-leave-at="{{ order.main_queue_until|date:'c' }}"{% endif %}
+             data-status-url="{% url 'pos:queue_status' order.id %}?queue={{ queue_name }}"
              hx-get="{% url 'pos:queue_open' order.id %}"
              hx-target="#order-panel"
              hx-swap="outerHTML">
@@ -25,7 +41,7 @@
           {% endif %}
           <button type="button"
                   class="status-pill status-{{ order.status }}"
-                  hx-post="{% url 'pos:queue_cycle' order.id %}"
+                  hx-post="{% url 'pos:queue_cycle' order.id %}?queue={{ queue_name }}"
                   hx-target="#barista-queue"
                   hx-sync="#barista-queue:abort"
                   hx-swap="outerHTML"
@@ -42,9 +58,21 @@
       {% endif %}
       <ul class="q-lines">
         {% for line in order.lines.all %}
-          <li class="q-item">
+          <li class="q-item{% if line.handed_out %} is-handed{% endif %}">
             <div class="q-item-row">
-              <span>{{ line.name_snapshot }}</span>
+              <label class="q-handout" hx-on:click="event.stopPropagation()">
+                <input type="checkbox"
+                       {% if line.handed_out %}checked{% endif %}
+                       aria-label="отдали"
+                       title="отдали"
+                       hx-post="{% url 'pos:line_handed' line.id %}?queue={{ queue_name }}"
+                       hx-target="#barista-queue"
+                       hx-swap="outerHTML"
+                       hx-sync="#barista-queue:abort"
+                       hx-trigger="change"
+                       hx-on:click="event.stopPropagation()">
+                <span class="q-item-name">{{ line.name_snapshot }}</span>
+              </label>
               {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
             </div>
             {% for addon in line|visible_addons %}
@@ -59,6 +87,14 @@
       {% endif %}
     </article>
   {% empty %}
-    <p class="queue-empty">Очередь пуста. Заказ появится после «В очередь» или оплаты.</p>
+    <p class="queue-empty">
+      {% if queue_name == "ready" %}
+        Готовых заказов нет.
+      {% elif queue_name == "cancelled" %}
+        Отменённых заказов нет.
+      {% else %}
+        Очередь пуста. Заказ появится после «В очередь» или оплаты.
+      {% endif %}
+    </p>
   {% endfor %}
 </aside>

@@ -23,7 +23,7 @@ from apps.orders.models import Shift
 
 
 def open_shift(user=None):
-    """Касса и меню без открытой смены уводят на экран «Смена»."""
+    """Касса без открытой смены уводит на экран «Смена». Меню — нет."""
     return Shift.objects.create(
         business_date=date(2026, 10, 5), is_open=True, opened_by=user
     )
@@ -48,9 +48,6 @@ class CatalogPermissionsTests(TestCase):
         )
 
     def test_anonymous_reaches_the_menu_as_admin(self):
-        response = self.client.get(reverse("catalog:dashboard"))
-        self.assertRedirects(response, reverse("pos:shift"))
-        open_shift()
         response = self.client.get(reverse("catalog:dashboard"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Позиции")
@@ -82,11 +79,37 @@ class CatalogPermissionsTests(TestCase):
 class CatalogNavigationTests(TestCase):
     """Верхняя навигация не должна вести в /admin/ для обычных менеджеров."""
 
-    def test_manager_without_shift_is_sent_to_open_it(self):
+    def test_menu_editor_opens_and_saves_without_a_shift(self):
         User.objects.create_user(username="mgr", password="pw", role=User.ROLE_ADMIN)
         self.client.login(username="mgr", password="pw")
-        response = self.client.get(reverse("catalog:dashboard"))
-        self.assertRedirects(response, reverse("pos:shift"))
+        category = Category.objects.create(name="Напитки", slug="drinks", order=1)
+        product = Product.objects.create(
+            name="Раф", price=Decimal("240"), category=category
+        )
+        self.assertFalse(Shift.objects.filter(is_open=True).exists())
+
+        page = self.client.get(reverse("catalog:dashboard"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Раф")
+        self.assertContains(page, "Сохранить")
+
+        saved = self.client.post(
+            reverse("catalog:product_edit", args=[product.id]),
+            data={
+                "name": "Раф",
+                "price": "180",
+                "category": category.id,
+                "is_active": "on",
+                "order": 0,
+                "stay": "1",
+            },
+        )
+        self.assertRedirects(
+            saved, reverse("catalog:dashboard") + f"?product={product.id}"
+        )
+        product.refresh_from_db()
+        self.assertEqual(product.price, Decimal("180"))
+        self.assertFalse(Shift.objects.filter(is_open=True).exists())
 
     def test_manager_topbar_hides_django_admin(self):
         user = User.objects.create_user(username="m", password="pw", role=User.ROLE_ADMIN)

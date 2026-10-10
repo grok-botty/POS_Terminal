@@ -58,10 +58,11 @@ def funny_guest_name() -> str:
 
 
 def open_shift_required(view):
-    """Пускать на кассу, меню и статистику только при открытой смене.
+    """Пускать на кассу только при открытой смене.
 
-    Без смены шапка гасит вкладки, а сервер всё равно возвращает на
-    «Смену»: дату нельзя подставить с часов ноутбука.
+    Без смены шапка гасит вкладку «Касса», а сервер возвращает на
+    «Смену»: дату нельзя подставить с часов ноутбука. «Статистика»
+    и редактор меню открываются и без смены.
     """
 
     @wraps(view)
@@ -183,9 +184,30 @@ def _line_on_panel(request: HttpRequest, line_id: int) -> OrderLine:
     return get_object_or_404(OrderLine, pk=line_id, order=order)
 
 
+QUEUE_ACTIVE = "active"
+QUEUE_READY = "ready"
+QUEUE_CANCELLED = "cancelled"
+QUEUE_OPTIONS = (
+    (QUEUE_ACTIVE, "Очередь"),
+    (QUEUE_READY, "Готовые"),
+    (QUEUE_CANCELLED, "Отмена"),
+)
+
+
+def _queue_name(request: HttpRequest) -> str:
+    """Какая из трёх очередей сейчас на экране. Чужое значение — основная."""
+    raw = (request.POST.get("queue") or request.GET.get("queue") or QUEUE_ACTIVE).strip()
+    if raw not in {QUEUE_ACTIVE, QUEUE_READY, QUEUE_CANCELLED}:
+        return QUEUE_ACTIVE
+    return raw
+
+
 def _queue_context(request: HttpRequest) -> dict:
+    name = _queue_name(request)
     return {
-        "queue": order_services.barista_queue(),
+        "queue": order_services.barista_queue(name),
+        "queue_name": name,
+        "queue_options": QUEUE_OPTIONS,
         "current_order_id": request.session.get(SESSION_ORDER_KEY),
     }
 
@@ -676,6 +698,24 @@ def queue_set_status(request: HttpRequest, pk: int) -> HttpResponse:
     return queue_fragment(request)
 
 
+@login_required(login_url="accounts:login")
+@open_shift_required
+@require_http_methods(["POST"])
+def queue_line_handed(request: HttpRequest, line_id: int) -> HttpResponse:
+    """Галочка «отдали» на строке карточки. Редактор заказа не открывает."""
+    line = get_object_or_404(
+        OrderLine.objects.select_related("order"),
+        pk=line_id,
+        order__status__in=(
+            Order.Status.IN_PROGRESS,
+            Order.Status.READY,
+            Order.Status.CANCELLED,
+        ),
+    )
+    order_services.set_line_handed_out(line)
+    return queue_fragment(request)
+
+
 def _posted_modifier_ids(request: HttpRequest) -> list[int]:
     """Собрать id допов: чекбоксы в ``modifiers``, радиокнопки — в ``group_<id>``."""
     ids: list[int] = []
@@ -862,7 +902,6 @@ def _stats_selection(request: HttpRequest):
 
 
 @login_required(login_url="accounts:login")
-@open_shift_required
 def stats(request: HttpRequest) -> HttpResponse:
     """Статистика по бизнес-датам смен и нагрузка по времени смены.
 
@@ -873,7 +912,6 @@ def stats(request: HttpRequest) -> HttpResponse:
 
 
 @login_required(login_url="accounts:login")
-@open_shift_required
 def stats_csv(request: HttpRequest) -> HttpResponse:
     """CSV выбранного периода. Файл собирается из локальной базы."""
     selection = _stats_selection(request)

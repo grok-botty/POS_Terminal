@@ -15,6 +15,7 @@ urlpatterns = [
     path("queue/<int:pk>/", views.queue_open, name="queue_open"),
     path("queue/<int:pk>/cycle/", views.queue_cycle, name="queue_cycle"),
     path("queue/<int:pk>/status/", views.queue_set_status, name="queue_status"),
+    path("lines/<int:line_id>/handed/", views.queue_line_handed, name="line_handed"),
     path("products/", views.products_grid, name="products_grid"),
     path("products/<int:product_id>/pick/", views.modifier_picker, name="modifier_picker"),
     path("products/<int:product_id>/add/", views.add_line, name="add_line"),

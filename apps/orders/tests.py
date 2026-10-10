@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -287,3 +288,166 @@ class OrderServicesTests(TestCase):
             [("19:30", 1)],
         )
         self.assertEqual(only_early["bucket_minutes"], 30)
+
+
+class HandoutAndQueuesTests(TestCase):
+    """Галочки «отдали», автоперевод в «Готово» и три очереди смены."""
+
+    def setUp(self) -> None:
+        self.cat = Category.objects.create(name="Напитки", slug="drinks")
+        self.latte = Product.objects.create(
+            name="Латте", price=Decimal("200"), category=self.cat
+        )
+        self.t0 = datetime(2026, 10, 7, 16, 0, tzinfo=dt_timezone.utc)
+        with patch("apps.orders.services.timezone.now", return_value=self.t0):
+            self.shift = services.open_shift(
+                business_date=date(2026, 10, 7), start_time=time(19, 0)
+            )
+
+    def _paid(self, name: str) -> Order:
+        order = services.create_order(guest_name=name)
+        services.add_line(order, self.latte, quantity=1)
+        services.pay_order(order)
+        order.refresh_from_db()
+        return order
+
+    def test_all_handed_and_paid_arms_then_uncheck_or_unpay_cancels(self) -> None:
+        order = self._paid("Маша")
+        line = order.lines.get()
+        self.assertIsNone(order.auto_ready_at)
+
+        services.set_line_handed_out(line, True)
+        order.refresh_from_db()
+        self.assertIsNotNone(order.auto_ready_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+
+        unpaid = services.create_order(guest_name="Без денег")
+        services.add_line(unpaid, self.latte, quantity=1)
+        services.enqueue_order(unpaid)
+        services.set_line_handed_out(unpaid.lines.get(), True)
+        unpaid.refresh_from_db()
+        self.assertIsNone(unpaid.auto_ready_at)
+
+        services.set_line_handed_out(line, False)
+        order.refresh_from_db()
+        self.assertIsNone(order.auto_ready_at)
+
+        with patch("apps.orders.services.timezone.now", return_value=self.t0):
+            services.set_line_handed_out(line, True)
+        order.refresh_from_db()
+        self.assertEqual(order.auto_ready_at, self.t0)
+        services.unpay_order(order)
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+        self.assertIsNone(order.auto_ready_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+
+        with patch(
+            "apps.orders.services.timezone.now",
+            return_value=self.t0 + timedelta(seconds=10),
+        ):
+            services.settle_due_auto_ready(self.shift)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+
+    def test_auto_ready_after_five_seconds_sets_handout_time(self) -> None:
+        with patch("apps.orders.services.timezone.now", return_value=self.t0):
+            order = self._paid("Лена")
+            services.set_line_handed_out(order.lines.get(), True)
+        order.refresh_from_db()
+        self.assertEqual(order.auto_ready_at, self.t0)
+
+        with patch(
+            "apps.orders.services.timezone.now",
+            return_value=self.t0 + timedelta(seconds=4),
+        ):
+            self.assertEqual(services.settle_due_auto_ready(self.shift), 0)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertEqual(order.handout_clock(), "")
+
+        due = self.t0 + timedelta(seconds=5)
+        with patch("apps.orders.services.timezone.now", return_value=due):
+            self.assertEqual(services.settle_due_auto_ready(self.shift), 1)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.READY)
+        self.assertEqual(order.ready_at, due)
+        self.assertEqual(order.handout_clock(), "19:00")
+        self.assertEqual(order.main_queue_until, due + timedelta(seconds=13))
+
+    def test_new_line_cancels_the_countdown(self) -> None:
+        with patch("apps.orders.services.timezone.now", return_value=self.t0):
+            order = self._paid("Кира")
+            services.set_line_handed_out(order.lines.get(), True)
+        services.add_line(order, self.latte, quantity=1)
+        order.refresh_from_db()
+        self.assertIsNone(order.auto_ready_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+
+    def test_paid_ready_and_cancelled_leave_the_main_queue_after_hold(self) -> None:
+        with patch("apps.orders.services.timezone.now", return_value=self.t0):
+            ready = self._paid("Готовый")
+            cancelled = self._paid("Отменённый")
+            still = self._paid("В работе")
+            services.mark_ready(ready)
+            services.cancel_order(cancelled)
+        Order.objects.filter(pk=ready.pk).update(created_at=self.t0)
+        Order.objects.filter(pk=cancelled.pk).update(
+            created_at=self.t0 + timedelta(minutes=1)
+        )
+        Order.objects.filter(pk=still.pk).update(
+            created_at=self.t0 + timedelta(minutes=2)
+        )
+
+        holding = self.t0 + timedelta(seconds=12)
+        with patch("apps.orders.services.timezone.now", return_value=holding):
+            active = [order.id for order in services.barista_queue("active")]
+            self.assertEqual(active, [ready.id, cancelled.id, still.id])
+            self.assertEqual(services.barista_queue("ready"), [])
+            self.assertEqual(services.barista_queue("cancelled"), [])
+
+        left = self.t0 + timedelta(seconds=13)
+        with patch("apps.orders.services.timezone.now", return_value=left):
+            active = [order.id for order in services.barista_queue("active")]
+            ready_ids = [order.id for order in services.barista_queue("ready")]
+            cancelled_ids = [order.id for order in services.barista_queue("cancelled")]
+        self.assertEqual(active, [still.id])
+        self.assertEqual(ready_ids, [ready.id])
+        self.assertEqual(cancelled_ids, [cancelled.id])
+
+        with patch("apps.orders.services.timezone.now", return_value=self.t0):
+            services.set_barista_status(ready, Order.Status.READY)
+        ready.refresh_from_db()
+        self.assertEqual(ready.ready_at, self.t0)
+        self.assertEqual(ready.main_queue_until, self.t0 + timedelta(seconds=13))
+
+    def test_unpaid_ready_stays_until_payment_starts_the_hold(self) -> None:
+        order = services.create_order(guest_name="Должен")
+        services.add_line(order, self.latte, quantity=1)
+        services.enqueue_order(order)
+        services.mark_ready(order)
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+        self.assertIsNone(order.main_queue_until)
+        self.assertEqual(
+            [item.id for item in services.barista_queue("active")], [order.id]
+        )
+        self.assertEqual(services.barista_queue("ready"), [])
+
+        with patch("apps.orders.services.timezone.now", return_value=self.t0):
+            services.pay_order(order)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.READY)
+        self.assertEqual(order.main_queue_until, self.t0 + timedelta(seconds=13))
+        self.assertEqual(
+            [item.id for item in services.barista_queue("active")], [order.id]
+        )
+
+    def test_other_shifts_are_hidden(self) -> None:
+        foreign_shift = Shift.objects.create(
+            business_date=date(2026, 1, 1), is_open=False
+        )
+        foreign = self._paid("Чужая смена")
+        foreign.shift = foreign_shift
+        foreign.save(update_fields=["shift"])
+        self.assertEqual(services.barista_queue("active"), [])

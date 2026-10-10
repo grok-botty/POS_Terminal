@@ -20,8 +20,6 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
-from apps.orders.services import get_open_shift
-
 from .forms import CategoryForm, ModifierForm, ModifierGroupForm, ProductForm
 from .models import Category, Modifier, ModifierGroup, Product
 
@@ -34,8 +32,6 @@ def _manager_required(view):
     def wrapper(request: HttpRequest, *args, **kwargs):
         if not request.user.is_manager():
             return HttpResponseForbidden("Нужны права администратора.")
-        if get_open_shift() is None:
-            return redirect("pos:shift")
         return view(request, *args, **kwargs)
 
     return wrapper

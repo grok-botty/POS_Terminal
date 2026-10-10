@@ -2,7 +2,10 @@
 
 from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from pathlib import Path
+from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -10,7 +13,7 @@ from django.urls import reverse
 from apps.catalog.models import Category, Modifier, ModifierGroup, Product
 from apps.orders import services
 from apps.orders.models import Order, Shift
-from apps.pos.views import FUNNY_GUESTS
+from apps.pos.views import FUNNY_GUESTS, SESSION_ORDER_KEY
 
 
 User = get_user_model()
@@ -360,8 +363,48 @@ class ShiftScreenTests(TestCase):
         self.assertRedirects(
             self.client.get(reverse("pos:register")), reverse("pos:shift")
         )
+        stats = self.client.get(reverse("pos:stats"))
+        self.assertEqual(stats.status_code, 200)
+        self.assertContains(stats, "Статистика")
+        body = response.content.decode()
+        stats_link = body[body.index('href="/pos/stats/"'):body.index("</a>", body.index('href="/pos/stats/"'))]
+        menu_link = body[body.index('href="/catalog/"'):body.index("</a>", body.index('href="/catalog/"'))]
+        self.assertNotIn("aria-disabled", stats_link)
+        self.assertNotIn("aria-disabled", menu_link)
+        self.assertIn("aria-disabled", body[body.index('href="/pos/"'):body.index("</a>", body.index(">Касса<"))])
+
+    def test_stats_works_with_no_shift_open(self):
+        closed = Shift.objects.create(
+            business_date=date(2026, 9, 1),
+            is_open=False,
+            start_time=time(19, 30),
+            opened_at=datetime(2026, 9, 1, 16, 0, tzinfo=dt_timezone.utc),
+        )
+        order = services.create_order(guest_name="Архив")
+        services.add_line(order, self.latte, quantity=1)
+        order.shift = closed
+        order.save(update_fields=["shift"])
+        services.pay_order(order)
+        services.mark_ready(order)
+        self.assertFalse(Shift.objects.filter(is_open=True).exists())
+
+        page = self.client.get(reverse("pos:stats") + "?period=all")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Статистика")
+        self.assertContains(page, "Латте")
+        self.assertEqual(page.context["stats"]["issued"], 1)
+        self.assertEqual(page.context["stats"]["revenue"], Decimal("200.00"))
+
+        current = self.client.get(reverse("pos:stats"))
+        self.assertEqual(current.status_code, 200)
+        self.assertContains(current, "За эту выборку смен нет.")
+        self.assertEqual(current.context["stats"]["issued"], 0)
+
+        exported = self.client.get(reverse("pos:stats_csv") + "?period=all")
+        self.assertEqual(exported.status_code, 200)
+        self.assertIn("Латте", exported.content.decode("utf-8-sig"))
         self.assertRedirects(
-            self.client.get(reverse("pos:stats")), reverse("pos:shift")
+            self.client.get(reverse("pos:register")), reverse("pos:shift")
         )
 
     def test_open_shift_keeps_the_posted_date(self):
@@ -437,7 +480,9 @@ class ShiftScreenTests(TestCase):
         admin = User.objects.get(username="admin")
         self.assertTrue(admin.is_manager())
         self.assertRedirects(guest.get(reverse("pos:register")), reverse("pos:shift"))
-        self.assertRedirects(guest.get(reverse("pos:stats")), reverse("pos:shift"))
+        stats = guest.get(reverse("pos:stats"))
+        self.assertEqual(stats.status_code, 200)
+        self.assertContains(stats, "Статистика")
 
     def test_close_requires_the_exact_word_and_keeps_unfinished_orders(self):
         shift = Shift.objects.create(
@@ -609,3 +654,152 @@ class StatsByShiftDateTests(TestCase):
         self.assertIn("19:47", body)
         self.assertIn("20:10", body)
         self.assertNotIn("03:17", body)
+
+
+class HandoutQueueScreenTests(TestCase):
+    """Галочки, автоготово и переключение очередей на экране кассы."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username="queue-cashier", password="cashier")
+        cls.cat = Category.objects.create(name="Классика-очередь", slug="queue-klassika")
+        cls.espresso = Product.objects.create(
+            name="Эспрессо", price=Decimal("150"), category=cls.cat
+        )
+        cls.shift = Shift.objects.create(
+            business_date=date(2026, 10, 5), is_open=True, opened_by=cls.user
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def _enqueue(self, name: str, *, pay: bool = True) -> Order:
+        order = services.create_order(guest_name=name)
+        services.add_line(order, self.espresso, quantity=1)
+        if pay:
+            services.pay_order(order)
+        else:
+            services.enqueue_order(order)
+        order.refresh_from_db()
+        return order
+
+    def test_handout_checkbox_persists_and_does_not_open_the_editor(self):
+        self.client.get(reverse("pos:register"))
+        draft_id = self.client.session[SESSION_ORDER_KEY]
+        order = self._enqueue("Маша")
+        line = order.lines.get()
+
+        response = self.client.post(reverse("pos:line_handed", args=[line.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="barista-queue"')
+        self.assertNotContains(response, 'id="order-panel"')
+        self.assertContains(response, 'aria-label="отдали"')
+        self.assertContains(response, "is-handed")
+        self.assertContains(response, "event.stopPropagation()")
+        self.assertContains(response, "checked")
+        line.refresh_from_db()
+        self.assertTrue(line.handed_out)
+        self.assertEqual(self.client.session[SESSION_ORDER_KEY], draft_id)
+
+        again = self.client.post(reverse("pos:line_handed", args=[line.id]))
+        self.assertNotContains(again, "is-handed")
+        line.refresh_from_db()
+        self.assertFalse(line.handed_out)
+
+    def test_unpaid_card_uses_the_full_red_outline_class(self):
+        self._enqueue("Квакша", pay=False)
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertContains(queue, "q-card-unpaid")
+        css = (Path(settings.BASE_DIR) / "static/css/app.css").read_text()
+        rule = css.split(".q-card-unpaid", 1)[1].split("}", 1)[0]
+        self.assertIn("border: 2px solid #c74747", rule)
+        self.assertNotIn("inset", rule)
+
+    def test_queue_switch_scopes_to_the_shift_and_sorts_oldest_first(self):
+        t0 = datetime(2026, 10, 7, 12, 0, tzinfo=dt_timezone.utc)
+        self.shift.opened_at = t0 - timedelta(minutes=17)
+        self.shift.start_time = time(19, 30)
+        self.shift.save(update_fields=["opened_at", "start_time"])
+
+        with patch("apps.orders.services.timezone.now", return_value=t0):
+            older = self._enqueue("Старый")
+            newer = self._enqueue("Новый")
+            ready = self._enqueue("Готовенький")
+            dropped = self._enqueue("Снятый", pay=False)
+            services.mark_ready(ready)
+            services.cancel_order(dropped)
+        Order.objects.filter(pk=older.pk).update(created_at=t0)
+        Order.objects.filter(pk=newer.pk).update(created_at=t0 + timedelta(minutes=3))
+        Order.objects.filter(pk=ready.pk).update(created_at=t0 + timedelta(minutes=1))
+        Order.objects.filter(pk=dropped.pk).update(created_at=t0 + timedelta(minutes=2))
+
+        other = Shift.objects.create(business_date=date(2026, 1, 1), is_open=False)
+        stranger = self._enqueue("Чужой")
+        stranger.shift = other
+        stranger.save(update_fields=["shift"])
+
+        with patch(
+            "apps.orders.services.timezone.now",
+            return_value=t0 + timedelta(seconds=1),
+        ):
+            holding = self.client.get(reverse("pos:queue_fragment"))
+        html = holding.content.decode()
+        self.assertLess(html.index("Старый"), html.index("Готовенький"))
+        self.assertLess(html.index("Готовенький"), html.index("Снятый"))
+        self.assertLess(html.index("Снятый"), html.index("Новый"))
+        self.assertNotIn("Чужой", html)
+        self.assertContains(holding, 'class="queue-switch"')
+        self.assertContains(holding, "Готовые")
+        self.assertContains(holding, ">Отмена<")
+
+        Order.objects.filter(pk__in=[ready.pk, dropped.pk]).update(
+            main_queue_until=t0 - timedelta(seconds=1)
+        )
+        active = self.client.get(reverse("pos:queue_fragment"))
+        self.assertContains(active, "Старый")
+        self.assertContains(active, "Новый")
+        self.assertNotContains(active, "Готовенький")
+        self.assertNotContains(active, "Снятый")
+
+        ready_page = self.client.get(reverse("pos:queue_fragment") + "?queue=ready")
+        self.assertContains(ready_page, "Готовенький")
+        self.assertContains(ready_page, 'data-queue="ready"')
+        self.assertNotContains(ready_page, "Старый")
+        self.assertNotContains(ready_page, "Снятый")
+
+        cancelled_page = self.client.get(
+            reverse("pos:queue_fragment") + "?queue=cancelled"
+        )
+        self.assertContains(cancelled_page, "Снятый")
+        self.assertContains(cancelled_page, 'data-queue="cancelled"')
+        self.assertNotContains(cancelled_page, "Готовенький")
+
+    def test_auto_ready_survives_reload_and_writes_the_handout_clock(self):
+        t0 = datetime(2026, 10, 7, 12, 0, tzinfo=dt_timezone.utc)
+        self.shift.opened_at = t0 - timedelta(minutes=17)
+        self.shift.start_time = time(19, 30)
+        self.shift.save(update_fields=["opened_at", "start_time"])
+        with patch("apps.orders.services.timezone.now", return_value=t0):
+            order = self._enqueue("Маша")
+            services.set_line_handed_out(order.lines.get(), True)
+
+        with patch(
+            "apps.orders.services.timezone.now",
+            return_value=t0 + timedelta(seconds=4),
+        ):
+            waiting = self.client.get(reverse("pos:queue_fragment"))
+        self.assertContains(waiting, "data-auto-ready-at")
+        self.assertContains(waiting, "Не готово")
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+
+        due = t0 + timedelta(seconds=5)
+        with patch("apps.orders.services.timezone.now", return_value=due):
+            promoted = self.client.get(reverse("pos:queue_fragment"))
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.READY)
+        self.assertEqual(order.ready_at, due)
+        self.assertContains(promoted, "Готово")
+        self.assertContains(promoted, "выдан 19:47")
+        self.assertContains(promoted, "data-leave-at")
+        self.assertContains(promoted, "Маша")
