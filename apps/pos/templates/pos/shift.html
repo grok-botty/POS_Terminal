@@ -9,15 +9,21 @@
   <section class="shift-card">
     {% if mode == "open" %}
       <h1>Открыть смену</h1>
-      <p class="shift-lead">Оффлайн · дата ставится вручную (часы ноута не используем).</p>
+      <p class="shift-lead">Оффлайн · дату и начало ставим вручную (абсолютные часы ноута не используем).</p>
       {% if error %}<p class="shift-error">{{ error }}</p>{% endif %}
       <form method="post" class="shift-form">
         {% csrf_token %}
         <input type="hidden" name="action" value="open">
-        <label class="field">
-          <span>Дата смены</span>
-          <input type="date" name="business_date" required value="{{ posted_date }}">
-        </label>
+        <div class="shift-when">
+          <label class="field">
+            <span>Дата смены</span>
+            <input type="date" name="business_date" required value="{{ posted_date }}">
+          </label>
+          <label class="field">
+            <span>Начало</span>
+            <input type="time" name="start_time" required value="{{ posted_start|default:'19:30' }}">
+          </label>
+        </div>
         <label class="field">
           <span>Кассир</span>
           <input type="text" name="cashier_name" maxlength="100" required value="{{ cashier_name }}" autocomplete="name">
@@ -27,7 +33,7 @@
 
     {% elif mode == "confirm" %}
       <h1>Закрыть смену</h1>
-      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · {{ shift.cashier_name|default:user.username }}</p>
+      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · начало {{ shift.start_time|time:"H:i" }} · {{ shift.cashier_name|default:user.username }}</p>
       <p class="shift-lead">Введите <strong>ЗАКРЫТЬ</strong> заглавными буквами. Одна кнопка смену не закрывает.</p>
       {% if summary.unfinished %}
         <p class="shift-note">Незавершённые заказы не отменятся сами — они останутся в истории этой смены. Пометить их отменёнными можно на кассе до закрытия.</p>
@@ -48,7 +54,7 @@
 
     {% else %}
       <h1>Закрыть смену</h1>
-      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · {{ shift.cashier_name|default:user.username }}</p>
+      <p class="shift-lead">Дата смены: {{ shift.business_date|ru_date }} · начало {{ shift.start_time|time:"H:i" }} · {{ shift.cashier_name|default:user.username }}</p>
       <dl class="shift-stats">
         <div><dt>Заказов</dt><dd>{{ summary.orders }}</dd></div>
         <div><dt>Оплачено</dt><dd>{{ summary.paid|rub }}</dd></div>

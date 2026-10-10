@@ -1,6 +1,6 @@
 """Тесты экрана кассы: допы, очередь и цикл статуса."""
 
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -365,15 +365,24 @@ class ShiftScreenTests(TestCase):
         )
 
     def test_open_shift_keeps_the_posted_date(self):
+        form = self.client.get(reverse("pos:shift"))
+        self.assertContains(form, 'name="start_time"')
+        self.assertContains(form, 'value="19:30"')
+        self.assertContains(form, "shift-when")
         response = self.client.post(
             reverse("pos:shift"),
-            {"action": "open", "business_date": "2020-01-02"},
+            {
+                "action": "open",
+                "business_date": "2020-01-02",
+                "start_time": "21:05",
+            },
         )
         self.assertRedirects(response, reverse("pos:register"))
         shift = Shift.objects.get()
         self.assertEqual(shift.business_date, date(2020, 1, 2))
+        self.assertEqual(shift.start_time, time(21, 5))
         self.assertTrue(shift.is_open)
-        self.assertIsNone(shift.opened_at)
+        self.assertIsNotNone(shift.opened_at)
         self.assertEqual(shift.opened_by, self.user)
         self.assertEqual(shift.cashier_name, "cashier")
         self.assertNotEqual(shift.business_date, date(2026, 10, 6))
@@ -382,6 +391,14 @@ class ShiftScreenTests(TestCase):
         response = self.client.post(reverse("pos:shift"), {"action": "open"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Укажите дату смены")
+        self.assertFalse(Shift.objects.exists())
+
+        missing_time = self.client.post(
+            reverse("pos:shift"),
+            {"action": "open", "business_date": "2020-01-02", "start_time": ""},
+        )
+        self.assertEqual(missing_time.status_code, 200)
+        self.assertContains(missing_time, "Укажите время начала смены")
         self.assertFalse(Shift.objects.exists())
 
     def test_open_shift_stores_the_typed_cashier_name(self):
@@ -398,6 +415,7 @@ class ShiftScreenTests(TestCase):
             {
                 "action": "open",
                 "business_date": "2026-10-05",
+                "start_time": "19:30",
                 "cashier_name": "Маша на смене",
             },
         )
@@ -537,6 +555,57 @@ class StatsByShiftDateTests(TestCase):
         exported = self.client.get(reverse("pos:stats_csv") + "?from=2026-10-01&to=2026-10-01")
         body = exported.content.decode("utf-8-sig")
         self.assertIn("2026-10-01", body)
+        self.assertIn("Время оплаты", body)
+        self.assertIn("Время выдачи", body)
         self.assertIn("Латте", body)
         self.assertNotIn("Эспрессо", body)
         self.assertNotIn("2026-10-05", body)
+
+    def test_cards_panel_csv_and_load_chart_use_the_shift_clock(self):
+        opened = datetime(2010, 1, 1, 3, 0, tzinfo=dt_timezone.utc)
+        self.late.start_time = time(19, 30)
+        self.late.opened_at = opened
+        self.late.save(update_fields=["start_time", "opened_at"])
+        evening = Order.objects.get(shift=self.late, status=Order.Status.READY)
+        evening.guest_name = "Маша"
+        evening.paid_at = opened + timedelta(minutes=17)
+        evening.ready_at = opened + timedelta(minutes=40)
+        evening.save(update_fields=["guest_name", "paid_at", "ready_at"])
+        dropped = Order.objects.get(shift=self.late, status=Order.Status.CANCELLED)
+        dropped.paid_at = opened + timedelta(minutes=45)
+        dropped.save(update_fields=["paid_at"])
+
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertContains(queue, "оплата 19:47")
+        self.assertContains(queue, "выдан 20:10")
+        self.assertNotContains(queue, "03:17")
+        self.assertNotContains(queue, "2010")
+
+        self.client.get(reverse("pos:queue_open", args=[evening.id]))
+        panel = self.client.get(reverse("pos:order_panel"))
+        self.assertContains(panel, "Оплата 19:47")
+        self.assertContains(panel, "Выдан 20:10")
+
+        stats = self.client.get(reverse("pos:stats") + "?period=this")
+        self.assertContains(stats, "Нагрузка по времени")
+        self.assertContains(stats, 'class="revenue-chart load-chart"')
+        points = [
+            (point["label"], point["value"])
+            for point in stats.context["load_chart"]["points"]
+        ]
+        self.assertEqual(points, [("19:30", 1), ("20:00", 1)])
+        svg = stats.content.decode().split('class="revenue-chart load-chart"', 1)[1].split("</svg>", 1)[0]
+        self.assertNotIn(",", svg)
+        self.assertIn("19:30", svg)
+
+        other = self.client.get(reverse("pos:stats") + "?from=2026-10-01&to=2026-10-01")
+        self.assertIsNone(other.context["load_chart"])
+
+        exported = self.client.get(reverse("pos:stats_csv") + "?period=this")
+        body = exported.content.decode("utf-8-sig")
+        header = body.splitlines()[0]
+        self.assertIn("Время оплаты", header)
+        self.assertIn("Время выдачи", header)
+        self.assertIn("19:47", body)
+        self.assertIn("20:10", body)
+        self.assertNotIn("03:17", body)

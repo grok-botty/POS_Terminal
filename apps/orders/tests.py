@@ -1,9 +1,10 @@
 """Интеграционные тесты сервисного слоя приложения orders."""
 
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.catalog.models import Category, Modifier, ModifierGroup, Product
 from apps.orders import services
@@ -134,12 +135,17 @@ class OrderServicesTests(TestCase):
         self.assertIsNone(services.current_business_date())
 
     def test_open_shift_uses_the_given_date_and_refuses_a_second_one(self) -> None:
-        shift = services.open_shift(business_date=date(2020, 1, 2))
+        before = timezone.now()
+        shift = services.open_shift(business_date=date(2020, 1, 2), start_time=time(18, 15))
+        after = timezone.now()
         self.assertEqual(shift.business_date, date(2020, 1, 2))
-        self.assertIsNone(shift.opened_at)
+        self.assertEqual(shift.start_time, time(18, 15))
+        self.assertIsNotNone(shift.opened_at)
+        self.assertGreaterEqual(shift.opened_at, before)
+        self.assertLessEqual(shift.opened_at, after)
         self.assertTrue(shift.is_open)
         with self.assertRaises(services.ShiftError):
-            services.open_shift(business_date=date(2020, 1, 3))
+            services.open_shift(business_date=date(2020, 1, 3), start_time=time(19, 30))
         with self.assertRaises(services.ShiftError):
             services.open_shift(business_date=None)
 
@@ -207,3 +213,77 @@ class OrderServicesTests(TestCase):
         self.assertEqual(
             Order.objects.filter(status=Order.Status.READY).count(), 3
         )
+
+    def test_shift_clock_uses_elapsed_time_not_the_absolute_clock(self) -> None:
+        opened = datetime(2010, 6, 1, 4, 5, tzinfo=dt_timezone.utc)
+        shift = Shift.objects.create(
+            business_date=date(2026, 10, 5),
+            start_time=time(19, 30),
+            opened_at=opened,
+            is_open=True,
+        )
+        order = services.create_order()
+        services.add_line(order, self.latte, quantity=1)
+        order.shift = shift
+        services.pay_order(order)
+        order.paid_at = opened + timedelta(hours=4, minutes=45)
+        order.save(update_fields=["paid_at"])
+        services.mark_ready(order)
+        order.ready_at = opened + timedelta(hours=5)
+        order.save(update_fields=["ready_at"])
+
+        order.refresh_from_db()
+        self.assertEqual(order.payment_clock(), "00:15")
+        self.assertEqual(order.handout_clock(), "00:30")
+        self.assertNotEqual(order.paid_at.hour, 0)
+
+        load = services.load_over_time([shift])
+        self.assertEqual(load["bucket_minutes"], 30)
+        labels = [(row["label"], row["count"]) for row in load["points"]]
+        self.assertEqual(labels[0], ("19:30", 0))
+        self.assertEqual(labels[-1], ("00:00", 1))
+        self.assertNotIn("04:05", [row["label"] for row in load["points"]])
+        self.assertNotIn("08:50", [row["label"] for row in load["points"]])
+
+    def test_load_buckets_follow_the_selected_shifts_and_widen(self) -> None:
+        opened = datetime(2011, 1, 1, 2, 0, tzinfo=dt_timezone.utc)
+        early = Shift.objects.create(
+            business_date=date(2026, 10, 1),
+            start_time=time(19, 30),
+            opened_at=opened,
+            is_open=False,
+        )
+        late = Shift.objects.create(
+            business_date=date(2026, 10, 5),
+            start_time=time(19, 30),
+            opened_at=opened,
+            is_open=True,
+        )
+        first = services.create_order()
+        services.add_line(first, self.latte, quantity=1)
+        first.shift = early
+        services.pay_order(first)
+        first.paid_at = opened + timedelta(minutes=20)
+        first.save(update_fields=["paid_at"])
+
+        second = services.create_order()
+        services.add_line(second, self.latte, quantity=1)
+        second.shift = late
+        services.pay_order(second)
+        second.paid_at = opened + timedelta(hours=9)
+        second.save(update_fields=["paid_at"])
+
+        current = services.load_over_time(services.select_shifts(period="this"))
+        self.assertEqual(
+            [(row["label"], row["count"]) for row in current["points"]],
+            [("19:30", 0), ("20:30", 0), ("21:30", 0), ("22:30", 0), ("23:30", 0), ("00:30", 0), ("01:30", 0), ("02:30", 0), ("03:30", 0), ("04:30", 1)],
+        )
+        self.assertEqual(current["bucket_minutes"], 60)
+        only_early = services.load_over_time(
+            services.select_shifts(date_from=date(2026, 10, 1), date_to=date(2026, 10, 1))
+        )
+        self.assertEqual(
+            [(row["label"], row["count"]) for row in only_early["points"]],
+            [("19:30", 1)],
+        )
+        self.assertEqual(only_early["bucket_minutes"], 30)
