@@ -8,9 +8,6 @@ on:
   push:
     branches:
       - main
-      # Proves the windows-latest build on this PR before merge.
-      # Removed once the run is green; steady state is main + workflow_dispatch.
-      - cursor/windows-exe-1438
     tags:
       - "v*"
 
