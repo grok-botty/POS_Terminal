@@ -25,7 +25,13 @@ import sys
 from pathlib import Path
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# PyInstaller extracts the project tree (templates, static, apps) under
+# ``sys._MEIPASS``. A frozen process must resolve paths from there;
+# ``__file__`` inside the archive is not a usable project root.
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(getattr(sys, "_MEIPASS"))
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 # ---------------------------------------------------------------------------

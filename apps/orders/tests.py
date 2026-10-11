@@ -451,12 +451,14 @@ class HandoutAndQueuesTests(TestCase):
 
         with patch("apps.orders.services.timezone.now", return_value=self.t0):
             services.pay_order(order)
-        order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.READY)
-        self.assertEqual(order.main_queue_until, self.t0 + timedelta(seconds=13))
-        self.assertEqual(
-            [item.id for item in services.barista_queue("active")], [order.id]
-        )
+            order.refresh_from_db()
+            self.assertEqual(order.status, Order.Status.READY)
+            self.assertEqual(order.main_queue_until, self.t0 + timedelta(seconds=13))
+            # Пауза отсчитывается от t0. Без патча проверка берёт реальные
+            # часы, и к текущей дате пауза уже истекла.
+            self.assertEqual(
+                [item.id for item in services.barista_queue("active")], [order.id]
+            )
 
     def test_other_shifts_are_hidden(self) -> None:
         foreign_shift = Shift.objects.create(
