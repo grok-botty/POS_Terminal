@@ -29,6 +29,27 @@ from pathlib import Path
 LOG = logging.getLogger("cashmachine.launcher")
 
 
+def _ensure_stdio() -> None:
+    """Подставить настоящие stdout/stderr в оконной сборке PyInstaller.
+
+    При ``console=False`` оба потока равны ``None``. ``print`` это терпит,
+    а ``django runserver`` падает в ``OutputWrapper.write``.
+    """
+    frozen = bool(getattr(sys, "frozen", False))
+    if sys.stdout is not None and sys.stderr is not None and not frozen:
+        return
+    try:
+        stream = (_app_dir() / "cashmachine.log").open(
+            "a", encoding="utf-8", buffering=1
+        )
+    except Exception:
+        if sys.stdout is not None and sys.stderr is not None:
+            return
+        stream = open(os.devnull, "w", encoding="utf-8")
+    sys.stdout = stream
+    sys.stderr = stream
+
+
 # ---------------------------------------------------------------------------
 # Настройка путей: убеждаемся, что Django находит наш проект во frozen-режиме.
 # ---------------------------------------------------------------------------
@@ -78,6 +99,10 @@ def _publish_url(url: str) -> None:
         LOG.exception("Не удалось записать cashmachine.url")
 
 
+# Оконный exe не имеет консоли: Django пишет в stdout, его нужно подставить
+# до runserver. В обычном запуске из терминала потоки не трогаем.
+_ensure_stdio()
+
 # Логи пишем в файл рядом с пользовательской БД, чтобы легко собирать отчёты.
 try:
     logging.basicConfig(
@@ -106,12 +131,19 @@ def _pick_port(default: int = 8765) -> int:
     raise RuntimeError("Не найдено свободного loopback-порта.")
 
 
-def _wait_for_server(url: str, timeout: float = 30.0) -> bool:
+def _wait_for_server(
+    url: str,
+    timeout: float = 30.0,
+    server: threading.Thread | None = None,
+) -> bool:
     """Ждать, пока ``url`` ответит HTTP 200."""
     import urllib.request
 
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if server is not None and not server.is_alive():
+            LOG.error("Поток сервера завершился до ответа %s", url)
+            return False
         try:
             with urllib.request.urlopen(url, timeout=0.5) as r:
                 if r.status == 200:
@@ -206,11 +238,11 @@ def _main() -> int:
     LOG.info("Запуск CashMachine на %s (headless=%s)", url, _headless())
     print(f"CashMachine стартует на {url}", flush=True)
 
-    _start_server(host, port)
+    server = _start_server(host, port)
     # One-file распаковка и migrate на холодном диске заметно дольше, чем
     # запуск из исходников.
     timeout = 120.0 if getattr(sys, "frozen", False) else 30.0
-    if not _wait_for_server(url + "pos/shift/", timeout=timeout):
+    if not _wait_for_server(url + "pos/shift/", timeout=timeout, server=server):
         print(
             "Django-сервер не поднялся; подробности в cashmachine.log",
             file=sys.stderr,

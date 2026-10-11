@@ -41,4 +41,12 @@ if getattr(sys, "frozen", False):
     root = getattr(sys, "_MEIPASS", "")
     if root and root not in sys.path:
         sys.path.insert(0, root)
+    # console=False leaves the standard streams as None. Give them a sink
+    # before Django imports; launcher.py retargets them at the app log.
+    if sys.stdout is None or sys.stderr is None:
+        sink = open(os.devnull, "w", encoding="utf-8")
+        if sys.stdout is None:
+            sys.stdout = sink
+        if sys.stderr is None:
+            sys.stderr = sink
     _boot_log("runtime hook ok")
