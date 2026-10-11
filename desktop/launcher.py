@@ -8,6 +8,10 @@
 Файл работает и как обычный скрипт — ``python desktop/launcher.py``, — и
 как точка входа в one-file сборку PyInstaller, собранную по
 :mod:`desktop.pyinstaller_spec` / ``desktop/build.bat``.
+
+Переменная ``CASHMACHINE_HEADLESS=1`` не открывает окно: процесс только
+держит локальный сервер (так GitHub Actions проверяет ``/pos/shift/``).
+Выбранный URL пишется в ``cashmachine.url`` рядом с базой.
 """
 
 from __future__ import annotations
@@ -46,14 +50,38 @@ sys.path.insert(0, str(BUNDLE))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 os.environ.setdefault("CASHMACHINE_DEBUG", "0")
 
+
+def _app_dir() -> Path:
+    """Каталог пользовательских данных: база, лог и ``cashmachine.url``."""
+    from config.settings import _default_db_path
+
+    path = _default_db_path().parent
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _headless() -> bool:
+    """Вернуть ``True``, если окно открывать не нужно (дымовой прогон CI)."""
+    return os.environ.get("CASHMACHINE_HEADLESS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _publish_url(url: str) -> None:
+    """Записать выбранный URL, чтобы внешний прогон нашёл порт."""
+    try:
+        (_app_dir() / "cashmachine.url").write_text(url + "\n", encoding="utf-8")
+    except Exception:
+        LOG.exception("Не удалось записать cashmachine.url")
+
+
 # Логи пишем в файл рядом с пользовательской БД, чтобы легко собирать отчёты.
 try:
-    from config.settings import _default_db_path  # type: ignore
-
-    _log_dir = _default_db_path().parent
-    _log_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
-        filename=str(_log_dir / "cashmachine.log"),
+        filename=str(_app_dir() / "cashmachine.log"),
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
@@ -78,14 +106,15 @@ def _pick_port(default: int = 8765) -> int:
     raise RuntimeError("Не найдено свободного loopback-порта.")
 
 
-def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
+def _wait_for_server(url: str, timeout: float = 30.0) -> bool:
+    """Ждать, пока ``url`` ответит HTTP 200."""
     import urllib.request
 
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=0.5) as r:
-                if 200 <= r.status < 500:
+                if r.status == 200:
                     return True
         except Exception:
             time.sleep(0.2)
@@ -101,19 +130,27 @@ def _start_server(host: str, port: int) -> threading.Thread:
     from apps.pos.bootstrap import ensure_bootstrapped
 
     ensure_bootstrapped()
+    from django.db import connections
+
+    connections.close_all()
 
     def _serve() -> None:
-        from django.core.management import execute_from_command_line
+        try:
+            from django.core.management import execute_from_command_line
 
-        execute_from_command_line(
-            [
-                "manage.py",
-                "runserver",
-                f"{host}:{port}",
-                "--noreload",
-                "--insecure",
-            ]
-        )
+            execute_from_command_line(
+                [
+                    "manage.py",
+                    "runserver",
+                    f"{host}:{port}",
+                    "--noreload",
+                    "--insecure",
+                ]
+            )
+        except SystemExit as exc:
+            LOG.error("runserver завершился: %s", exc)
+        except Exception:
+            LOG.exception("runserver упал")
 
     t = threading.Thread(target=_serve, daemon=True, name="django-runserver")
     t.start()
@@ -137,31 +174,57 @@ def _open_window(url: str, title: str = "CashMachine · Касса 6ки") -> bo
     return True
 
 
+def _keep_alive() -> int:
+    """Держать процесс живым, пока сервер работает в фоновом потоке."""
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        return 0
+
+
 def main() -> int:
     """Точка входа: используется и обычным скриптом, и PyInstaller-сборкой."""
+    try:
+        return _main()
+    except Exception:
+        LOG.exception("Не удалось запустить CashMachine")
+        print(
+            "Не удалось запустить CashMachine; подробности в cashmachine.log",
+            file=sys.stderr,
+        )
+        return 1
+
+
+def _main() -> int:
+    """Поднять сервер и открыть окно либо остаться в headless-режиме."""
     host = "127.0.0.1"
     port = _pick_port()
     url = f"http://{host}:{port}/"
+    _publish_url(url)
 
-    LOG.info("Запуск CashMachine на %s", url)
+    LOG.info("Запуск CashMachine на %s (headless=%s)", url, _headless())
     print(f"CashMachine стартует на {url}", flush=True)
 
     _start_server(host, port)
-    if not _wait_for_server(url + "accounts/login/"):
+    # One-file распаковка и migrate на холодном диске заметно дольше, чем
+    # запуск из исходников.
+    timeout = 120.0 if getattr(sys, "frozen", False) else 30.0
+    if not _wait_for_server(url + "pos/shift/", timeout=timeout):
         print(
             "Django-сервер не поднялся; подробности в cashmachine.log",
             file=sys.stderr,
         )
         return 1
 
+    if _headless():
+        print("Режим CASHMACHINE_HEADLESS: окно не открывается.", flush=True)
+        return _keep_alive()
+
     if not _open_window(url):
         webbrowser.open(url)
         print("Нажмите Ctrl+C для выхода.", flush=True)
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            return 0
+        return _keep_alive()
     return 0
 
 

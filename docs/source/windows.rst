@@ -5,6 +5,36 @@
 Windows-компьютере поднимает локальный Django, открывает окно pywebview и
 пишет данные в ``%LOCALAPPDATA%\\CashMachine\\cashmachine.sqlite3``.
 
+Скачать готовый exe
+-------------------
+
+Каждый push в ``main`` (смерженный pull request приходит именно так) и
+ручной запуск workflow ``Windows exe`` собирают ``CashMachine.exe`` на
+раннере ``windows-latest``. Файл лежит артефактом ``CashMachine-windows``
+у этого прогона и заменяет вложение скользящего релиза ``latest``.
+
+`Скачать CashMachine.exe (latest)
+<https://github.com/grok-botty/POS_Terminal/releases/download/latest/CashMachine.exe>`_
+
+Тег ``v*`` необязателен. Такой push тоже собирает exe и прикладывает его
+к релизу этой версии.
+
+Как запустить скачанный файл:
+
+1. Нужен `Microsoft Edge WebView2 Runtime
+   <https://developer.microsoft.com/en-us/microsoft-edge/webview2/>`_
+   (на Windows 11 он обычно уже есть).
+2. Сохраните ``CashMachine.exe`` и откройте его двойным щелчком.
+   Файл не подписан — антивирус может спросить подтверждение.
+3. Окно кассы откроется само. При первом запуске создаётся
+   ``%LOCALAPPDATA%\\CashMachine\\cashmachine.sqlite3``, применяются
+   миграции и, если пользователей ещё нет, заводятся ``admin/admin`` и
+   ``cashier/cashier``. Касса входит как ``admin``.
+
+Журнал: ``%LOCALAPPDATA%\\CashMachine\\cashmachine.log``.
+Пересобрать текущий ``main`` без нового коммита: Actions → ``Windows exe``
+→ ``Run workflow``.
+
 Требования на билд-машине
 -------------------------
 
@@ -89,6 +119,8 @@ Windows-компьютере поднимает локальный Django, от�
 Обновление
 ----------
 
-Один ``.exe`` не имеет автообновления. Обычный workflow — собрать новую
-версию, положить рядом с БД (или в отдельную папку) и подсказать бариста
-запустить новый бинарник; SQLite-файл при этом переиспользуется как есть.
+Один ``.exe`` не имеет автообновления. Обычный способ отдать новую сборку —
+скачать ``CashMachine.exe`` из релиза ``latest`` (ссылка выше) и заменить
+старый файл. SQLite в ``%LOCALAPPDATA%\\CashMachine\\`` при этом
+переиспользуется как есть. Локальная сборка через ``desktop\\build.bat``
+по-прежнему кладёт такой же файл в ``dist\\CashMachine.exe``.

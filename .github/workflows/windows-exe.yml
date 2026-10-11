@@ -1,0 +1,137 @@
+# Build CashMachine.exe on a GitHub-hosted Windows runner.
+# Triggers: every push to main (merged PRs), manual workflow_dispatch,
+# and optional version tags v*.
+name: Windows exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      # Proves the windows-latest build on this PR before merge.
+      # Removed once the run is green; steady state is main + workflow_dispatch.
+      - cursor/windows-exe-1438
+    tags:
+      - "v*"
+
+concurrency:
+  group: windows-exe-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      CASHMACHINE_DEBUG: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-desktop.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-desktop.txt
+
+      - name: Collect static files
+        env:
+          CASHMACHINE_DB_PATH: ${{ runner.temp }}\collectstatic.sqlite3
+        run: python manage.py collectstatic --noinput
+
+      - name: Build exe
+        run: pyinstaller --clean --noconfirm desktop\pyinstaller_spec.spec
+
+      - name: PyInstaller warnings
+        if: failure()
+        run: |
+          Get-ChildItem -Path build -Recurse -Filter "warn-*.txt" -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "===== $($_.FullName) ====="; Get-Content $_.FullName }
+
+      - name: Smoke test /pos/shift/
+        env:
+          CASHMACHINE_DB_PATH: ${{ runner.temp }}\cashmachine-smoke\cashmachine.sqlite3
+          CASHMACHINE_SECRET_KEY: ci-smoke-not-a-production-key
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File desktop\smoke_test.ps1 -TimeoutSec 180
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CashMachine-windows
+          path: dist/CashMachine.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish rolling latest release
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $notes = @"
+          Rolling Windows build of CashMachine.
+
+          - Commit: $env:GITHUB_SHA
+          - Run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+
+          Double-click CashMachine.exe. On first launch the app migrates SQLite under %LOCALAPPDATA%\CashMachine\ and opens the register.
+          "@
+          gh release delete latest --yes --cleanup-tag
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "No previous latest release to replace."
+          }
+          gh release create latest "dist/CashMachine.exe" `
+            --target $env:GITHUB_SHA `
+            --title "CashMachine (latest Windows build)" `
+            --notes $notes `
+            --latest
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Create failed; uploading over the existing latest release."
+            gh release upload latest "dist/CashMachine.exe" --clobber
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            gh release edit latest --title "CashMachine (latest Windows build)" --notes $notes --latest
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+
+      - name: Attach exe to version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title $tag --notes "CashMachine $tag" --latest=false
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          gh release upload $tag "dist/CashMachine.exe" --clobber
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Summarize downloads
+        if: success()
+        shell: pwsh
+        run: |
+          $lines = @(
+            "### CashMachine.exe",
+            "- Workflow artifact: ``CashMachine-windows`` on this run",
+            "- Rolling release (main, manual dispatch, and version tags): https://github.com/$env:GITHUB_REPOSITORY/releases/download/latest/CashMachine.exe"
+          )
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($lines -join "`n")

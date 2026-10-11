@@ -43,6 +43,11 @@ loopback-порту и открывает окно pywebview. Данные хр�
 `%LOCALAPPDATA%\CashMachine\cashmachine.sqlite3`, лог — в
 `%LOCALAPPDATA%\CashMachine\cashmachine.log`.
 
+Тот же exe собирается на GitHub после каждого обновления `main` и лежит в
+скользящем релизе
+[latest](https://github.com/grok-botty/POS_Terminal/releases/download/latest/CashMachine.exe).
+Скачайте файл и запустите двойным щелчком (нужен WebView2).
+
 Подробности сборки — в [`docs/source/windows.rst`](docs/source/windows.rst).
 
 ## Документация
