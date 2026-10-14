@@ -335,31 +335,6 @@ class RegisterScreenTests(TestCase):
         panel = self.client.get(reverse("pos:order_panel"))
         self.assertContains(panel, "Аня")
 
-    def test_cart_shows_new_vs_editing_mode_and_item_count(self):
-        fresh = self.client.get(reverse("pos:register"))
-        self.assertContains(fresh, "Новый заказ")
-        self.assertContains(fresh, "is-new")
-        self.assertContains(fresh, "Пусто")
-        self.assertNotContains(fresh, "Редактируешь заказ")
-
-        filled = self.client.post(reverse("pos:add_line", args=[self.croissant.id]))
-        self.assertContains(filled, "has-items")
-        self.assertContains(filled, 'cart-count-badge">1<')
-
-        order = services.create_order(guest_name="Петя")
-        services.add_line(order, self.espresso, quantity=2)
-        services.enqueue_order(order)
-        opened = self.client.get(reverse("pos:queue_open", args=[order.id]))
-        self.assertContains(opened, "is-editing")
-        self.assertContains(opened, f"Редактируешь заказ #{order.id} / Петя")
-        self.assertContains(opened, "✕ Закрыть / Новый заказ")
-        self.assertContains(opened, 'cart-count-badge">2<')
-
-        self.client.post(reverse("pos:order_discard"))
-        back = self.client.get(reverse("pos:order_panel"))
-        self.assertContains(back, "Новый заказ")
-        self.assertNotContains(back, "Редактируешь заказ")
-
     def test_editing_a_line_reopens_the_sheet(self):
         self.client.get(reverse("pos:register"))
         self.client.post(

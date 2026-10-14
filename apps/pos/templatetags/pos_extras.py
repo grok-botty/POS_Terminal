@@ -129,9 +129,3 @@ def minutes(seconds):
     if m == 0:
         return f"{s} с"
     return f"{m} мин {s:02d} с"
-
-
-@register.filter
-def cart_count(order) -> int:
-    """Сколько штук в заказе (сумма количеств по строкам)."""
-    return sum(line.quantity for line in order.lines.all())

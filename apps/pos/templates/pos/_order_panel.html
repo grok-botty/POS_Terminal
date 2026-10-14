@@ -1,25 +1,9 @@
 {% load pos_extras %}
-{% with item_count=order|cart_count %}
-<aside id="order-panel" class="order-col{% if order.status != "new" %} is-editing{% else %} is-new{% endif %}{% if item_count %} has-items{% endif %}">
+<aside id="order-panel" class="order-col">
+  <h2>Текущий заказ</h2>
   {% if order.status != "new" %}
-    <div class="cart-mode cart-mode-edit" role="status">
-      <div class="cart-mode-text">
-        <strong>✏️ Редактируешь заказ #{{ order.id }}{% if order.guest_name %} / {{ order.guest_name }}{% endif %}</strong>
-        <span>Из очереди{% if not order.is_paid %} · не оплачено{% else %} · оплачено{% endif %}</span>
-      </div>
-      <form hx-post="{% url 'pos:order_discard' %}" hx-swap="none">
-        {% csrf_token %}
-        <button type="submit" class="cart-mode-close">✕ Закрыть / Новый заказ</button>
-      </form>
-    </div>
-  {% else %}
-    <div class="cart-mode cart-mode-new">
-      <h2>Новый заказ</h2>
-    </div>
+    <p class="editing-note">Из очереди{% if not order.is_paid %} · не оплачено{% else %} · оплачено{% endif %}</p>
   {% endif %}
-  <p class="cart-count{% if item_count %} is-filled{% endif %}">
-    {% if item_count %}В заказе: <span class="cart-count-badge">{{ item_count }}</span> поз.{% else %}Пусто{% endif %}
-  </p>
   {% if order.payment_clock or order.handout_clock %}
     <p class="order-clocks">
       {% if order.payment_clock %}Оплата {{ order.payment_clock }}{% endif %}
@@ -146,4 +130,3 @@
     {% endif %}
   </div>
 </aside>
-{% endwith %}
