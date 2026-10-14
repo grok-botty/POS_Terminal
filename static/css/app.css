@@ -1863,3 +1863,33 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   .menu-editor-page .app-main { height: auto; overflow: auto; }
   .menu-editor, .menu-editor-tags { grid-template-columns: 1fr; height: auto; }
 }
+
+/* Режим корзины: новый заказ vs редактирование из очереди */
+.order-col.is-editing {
+  outline: 3px solid #e0a020;
+  outline-offset: -3px;
+  background: #fff8e6;
+}
+.cart-mode { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cart-mode-new h2 { margin: 0; font-size: 18px; font-weight: 700; color: #1f242e; }
+.cart-mode-edit {
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ffd877;
+  color: #4a3200;
+}
+.cart-mode-text { display: flex; flex-direction: column; gap: 2px; font-size: 16px; }
+.cart-mode-text span { font-size: 13px; font-weight: 600; }
+.cart-mode-close {
+  font: inherit; font-size: 14px; font-weight: 700;
+  padding: 6px 10px; border-radius: 8px; cursor: pointer;
+  border: 2px solid #4a3200; background: #fff; color: #4a3200;
+}
+.cart-mode-close:hover { background: #4a3200; color: #fff; }
+.cart-count { margin: -2px 0 0; font-size: 13px; color: #9aa0ad; }
+.cart-count.is-filled { color: #1f242e; font-weight: 700; }
+.cart-count-badge {
+  display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 11px;
+  background: #2f6fde; color: #fff; text-align: center;
+}
