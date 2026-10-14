@@ -42,7 +42,7 @@
     </label>
   </form>
 
-  <div class="cart-lines">
+  <div class="cart-lines{% if order.lines.all %} has-items{% endif %}">
     {% for line in order.lines.all %}
       <div class="cart-line">
         <button type="button"
