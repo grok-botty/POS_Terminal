@@ -335,6 +335,13 @@ class RegisterScreenTests(TestCase):
         panel = self.client.get(reverse("pos:order_panel"))
         self.assertContains(panel, "Аня")
 
+    def test_items_card_only_when_cart_has_lines(self):
+        empty = self.client.get(reverse("pos:register"))
+        self.assertContains(empty, 'class="cart-lines"')
+        self.assertNotContains(empty, "cart-lines has-items")
+        filled = self.client.post(reverse("pos:add_line", args=[self.croissant.id]))
+        self.assertContains(filled, 'class="cart-lines has-items"')
+
     def test_editing_a_line_reopens_the_sheet(self):
         self.client.get(reverse("pos:register"))
         self.client.post(

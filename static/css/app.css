@@ -1863,3 +1863,14 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   .menu-editor-page .app-main { height: auto; overflow: auto; }
   .menu-editor, .menu-editor-tags { grid-template-columns: 1fr; height: auto; }
 }
+
+/* Позиции заказа — полупрозрачная карточка, когда в корзине что-то есть */
+.cart-lines.has-items {
+  background: rgba(47, 111, 222, 0.07);
+  border: 1px solid rgba(47, 111, 222, 0.18);
+  border-radius: 12px;
+  padding: 6px 12px;
+  flex: 0 1 auto;
+  min-height: 0;
+  margin-bottom: auto;
+}
