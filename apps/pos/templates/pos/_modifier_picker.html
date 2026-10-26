@@ -3,6 +3,7 @@
      x-data="{
        base: {{ base_price|js_number }},
        n: 0,
+       q: '',
        label() {
          this.n;
          let total = Number(this.base);
@@ -12,6 +13,26 @@
          const rounded = Math.round(total * 100) / 100;
          const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
          return text + ' ₽';
+       },
+       filter(event) {
+         const raw = event && event.target ? event.target.value : this.q;
+         const needle = String(raw || '').trim().toLocaleLowerCase('ru');
+         let shown = 0;
+         for (const group of this.$root.querySelectorAll('.addon-group')) {
+           let visible = 0;
+           for (const chip of group.querySelectorAll('.addon-chip')) {
+             const name = String(chip.dataset.name || '').toLocaleLowerCase('ru');
+             const match = !needle || name.includes(needle);
+             chip.hidden = !match;
+             chip.classList.toggle('is-filtered-out', !match);
+             if (match) visible += 1;
+           }
+           group.hidden = visible === 0;
+           group.classList.toggle('is-filtered-out', visible === 0);
+           shown += visible;
+         }
+         const empty = this.$root.querySelector('.addon-search-empty');
+         if (empty) empty.hidden = !needle || shown > 0;
        }
      }"
      @change="n++"
@@ -51,12 +72,26 @@
       </div>
     </div>
 
+    {% if groups %}
+      <label class="addon-search">
+        <input type="search"
+               placeholder="Найти доп…"
+               autocomplete="off"
+               enterkeyhint="search"
+               aria-label="Найти доп"
+               x-model="q"
+               @input="filter($event)"
+               @keydown.enter.prevent />
+      </label>
+      <p class="addon-search-empty" hidden>Ничего не найдено</p>
+    {% endif %}
+
     {% for group in groups %}
       <fieldset class="addon-group">
         <legend>{{ group.name }}</legend>
         <div class="addon-chips">
           {% for opt in group.options.all %}
-            <label class="addon-chip">
+            <label class="addon-chip" data-name="{{ opt.name }}">
               <input class="addon-input"
                 type="{% if group.selection_mode == 'single' %}radio{% else %}checkbox{% endif %}"
                 name="{% if group.selection_mode == 'single' %}group_{{ group.id }}{% else %}modifiers{% endif %}"

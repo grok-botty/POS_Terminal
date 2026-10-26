@@ -1382,6 +1382,31 @@ button.pay-pill:hover { background: #f6d4d4; }
   cursor: pointer;
   padding: 0 4px;
 }
+.addon-search { display: block; margin: 0; }
+.addon-search input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid #dbe0eb;
+  background: #fff;
+  color: #1f242e;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 16px;
+  font-family: inherit;
+}
+.addon-search input:focus {
+  outline: 2px solid #2e78d9;
+  border-color: #2e78d9;
+}
+.addon-search-empty {
+  margin: 0;
+  color: #737a8c;
+  font-size: 13px;
+}
+.addon-chip.is-filtered-out,
+.addon-group.is-filtered-out {
+  display: none !important;
+}
 .addon-group { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .addon-group legend { color: #737a8c; font-size: 12px; font-weight: 600; padding: 0; }
 .addon-chips { display: flex; flex-wrap: wrap; gap: 8px; }

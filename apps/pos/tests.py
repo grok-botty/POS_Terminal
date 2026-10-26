@@ -114,7 +114,9 @@ class RegisterScreenTests(TestCase):
         self.assertContains(sheet, ">здесь<")
         self.assertContains(sheet, ">с собой<")
         self.assertContains(sheet, "В заказ")
-        self.assertNotContains(sheet, "addon-chip")
+        self.assertNotContains(sheet, 'class="addon-chip')
+        self.assertNotContains(sheet, 'class="addon-search"')
+        self.assertNotContains(sheet, 'placeholder="Найти доп…"')
         order = Order.objects.get(status=Order.Status.NEW)
         self.assertFalse(order.lines.exists())
 
@@ -135,6 +137,12 @@ class RegisterScreenTests(TestCase):
         self.assertContains(response, "обычное")
         self.assertContains(response, "checked")
         self.assertContains(response, "+30₽")
+        self.assertContains(response, 'placeholder="Найти доп…"')
+        self.assertContains(response, 'data-name="овсяное"')
+        self.assertContains(response, "is-filtered-out")
+        body = response.content.decode()
+        search = body[body.index('class="addon-search"'):body.index("</label>", body.index('class="addon-search"'))]
+        self.assertNotIn("name=", search)
 
         self.client.get(reverse("pos:register"))
         response = self.client.post(
