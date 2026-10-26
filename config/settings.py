@@ -132,10 +132,24 @@ def _default_db_path() -> Path:
     return app_dir / "cashmachine.sqlite3"
 
 
+# Ноутбук кассы: один файл SQLite, очередь опрашивается каждые несколько
+# секунд, иногда рядом живёт второй runserver. WAL пускает читателей
+# параллельно с писателем, timeout / busy_timeout ждут лок вместо
+# немедленного «database is locked».
+_SQLITE_BUSY_MS = 20_000
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": str(_default_db_path()),
+        "OPTIONS": {
+            "timeout": _SQLITE_BUSY_MS / 1000,
+            "init_command": (
+                "PRAGMA journal_mode=WAL;"
+                " PRAGMA synchronous=NORMAL;"
+                f" PRAGMA busy_timeout={_SQLITE_BUSY_MS}"
+            ),
+        },
     }
 }
 

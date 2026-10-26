@@ -11,13 +11,19 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Iterable
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.catalog.models import Modifier, ModifierGroup, Product
 
-from .models import Order, OrderLine, OrderLineModifier, Shift
+from .models import (
+    Order,
+    OrderLine,
+    OrderLineModifier,
+    Shift,
+    _generate_short_code,
+)
 
 
 # Точная фраза второго шага закрытия. Регистр и буквы обязательны.
@@ -25,6 +31,10 @@ CLOSE_PHRASE = "ЗАКРЫТЬ"
 
 # «Выдано» — бариста отметил «Готово» или заказ уже отдан со старого экрана.
 ISSUED_STATUSES = (Order.Status.READY, Order.Status.HANDED_OFF)
+
+# Короткий номер заказа уникален. На загруженной смене два чека могут
+# выпасть в один и тот же код; тогда пробуем новый, а не отдаём 500.
+_SHORT_CODE_ATTEMPTS = 8
 
 # Все позиции «отдали» и заказ оплачен → через столько секунд статус «Готово».
 AUTO_READY_DELAY = timedelta(seconds=5)
@@ -382,12 +392,28 @@ def create_order(
     fulfilment: str = Order.Fulfilment.HERE,
     guest_name: str = "",
 ) -> Order:
-    """Создать новый пустой заказ в статусе :attr:`Order.Status.NEW`."""
-    return Order.objects.create(
-        created_by=created_by,
-        fulfilment=fulfilment,
-        guest_name=guest_name,
-    )
+    """Создать новый пустой заказ в статусе :attr:`Order.Status.NEW`.
+
+    Столкновение ``short_code`` откатывается точкой сохранения и
+    повторяется с новым кодом. Так ``GET /pos/`` сразу после оплаты
+    не падает с ``IntegrityError``.
+    """
+    last_error: IntegrityError | None = None
+    for _ in range(_SHORT_CODE_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                return Order.objects.create(
+                    created_by=created_by,
+                    fulfilment=fulfilment,
+                    guest_name=guest_name,
+                    short_code=_generate_short_code(),
+                )
+        except IntegrityError as exc:
+            if "short_code" not in str(exc):
+                raise
+            last_error = exc
+    assert last_error is not None
+    raise last_error
 
 
 @transaction.atomic

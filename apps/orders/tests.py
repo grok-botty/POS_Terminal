@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.db import IntegrityError, connection
 from django.test import TestCase
 from django.utils import timezone
 
@@ -54,6 +55,28 @@ class OrderServicesTests(TestCase):
         services.update_order_meta(away, fulfilment=Order.Fulfilment.HERE)
         away.refresh_from_db()
         self.assertFalse(away.is_takeaway())
+
+    def test_create_order_retries_a_duplicate_short_code(self) -> None:
+        first = services.create_order()
+        codes = iter([first.short_code, "ZZ-99"])
+        with patch(
+            "apps.orders.services._generate_short_code",
+            side_effect=lambda: next(codes),
+        ):
+            second = services.create_order(guest_name="Повтор")
+        self.assertNotEqual(second.pk, first.pk)
+        self.assertEqual(second.short_code, "ZZ-99")
+        self.assertTrue(Order.objects.filter(pk=second.pk, guest_name="Повтор").exists())
+
+    def test_create_order_stops_after_repeated_short_code_collisions(self) -> None:
+        first = services.create_order()
+        with patch(
+            "apps.orders.services._generate_short_code",
+            return_value=first.short_code,
+        ):
+            with self.assertRaises(IntegrityError):
+                services.create_order()
+        self.assertEqual(Order.objects.count(), 1)
 
     def test_add_line_computes_total_with_modifiers(self) -> None:
         order = services.create_order()
