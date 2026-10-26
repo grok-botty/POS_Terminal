@@ -167,6 +167,20 @@ def _place_title(value: str | None) -> str:
     }.get(value or "", "")
 
 
+# Своя тара: 20 ₽ с каждой штуки. На строку из двух стаканов это 40 ₽.
+OWN_CUP_DISCOUNT = Decimal("20.00")
+
+
+def price_with_own_cup(amount: Decimal, fulfilment: str) -> Decimal:
+    """Цена одной штуки. «В свою» снимает :data:`OWN_CUP_DISCOUNT` и не уходит ниже нуля."""
+    if fulfilment != Order.Fulfilment.OWN_CUP:
+        return amount
+    discounted = amount - OWN_CUP_DISCOUNT
+    if discounted < 0:
+        return Decimal("0.00")
+    return discounted
+
+
 class Order(models.Model):
     """Заказ одного гостя.
 
@@ -414,13 +428,34 @@ class OrderLine(models.Model):
         verbose_name = "Позиция заказа"
         verbose_name_plural = "Позиции заказа"
 
-    def subtotal(self) -> Decimal:
-        """Вернуть сумму по позиции с учётом ценовых дельт модификаторов."""
+    def unit_before_discount(self) -> Decimal:
+        """Цена одной штуки с допами, до скидки за свою тару."""
         modifiers_total = sum(
             (m.price_delta_snapshot for m in self.modifiers.all()),
             Decimal("0.00"),
         )
-        return (self.unit_price + modifiers_total) * self.quantity
+        return self.unit_price + modifiers_total
+
+    def own_cup_discount(self) -> Decimal:
+        """Скидка за одну штуку. Ноль, если формат не «в свою» или цена уже ноль."""
+        if self.fulfilment != Order.Fulfilment.OWN_CUP:
+            return Decimal("0.00")
+        gross = self.unit_before_discount()
+        if gross <= 0:
+            return Decimal("0.00")
+        if gross < OWN_CUP_DISCOUNT:
+            return gross
+        return OWN_CUP_DISCOUNT
+
+    def subtotal(self) -> Decimal:
+        """Сумма позиции: (цена + допы − скидка за свою тару) × количество.
+
+        Скидка :data:`OWN_CUP_DISCOUNT` снимается с каждой штуки только
+        при формате «в свою». Ниже нуля сумма не уходит.
+        """
+        return price_with_own_cup(
+            self.unit_before_discount(), self.fulfilment
+        ) * self.quantity
 
     def is_takeaway(self) -> bool:
         """Позиция «с собой». «В свою» сюда не входит."""

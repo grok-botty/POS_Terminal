@@ -2,13 +2,26 @@
 <div class="modal-backdrop"
      x-data="{
        base: {{ base_price|js_number }},
+       cupOff: {{ own_cup_discount|js_number }},
        n: 0,
        q: '',
+       place() {
+         this.n;
+         const el = this.$root.querySelector('input[name=fulfilment]:checked');
+         return el ? el.value : 'here';
+       },
+       syncDiscount() {
+         const note = this.$root.querySelector('.sheet-discount');
+         if (note) note.hidden = this.place() !== 'own_cup';
+       },
        label() {
          this.n;
          let total = Number(this.base);
          for (const el of this.$root.querySelectorAll('input.addon-input:checked')) {
            total += Number(el.dataset.delta || 0);
+         }
+         if (this.place() === 'own_cup') {
+           total = Math.max(0, total - Number(this.cupOff));
          }
          const rounded = Math.round(total * 100) / 100;
          const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
@@ -35,7 +48,7 @@
          if (empty) empty.hidden = !needle || shown > 0;
        }
      }"
-     @change="n++"
+     @change="n++; syncDiscount()"
      @click.self="$el.remove()">
   <form class="sheet"
         method="post"
@@ -117,6 +130,7 @@
     </label>
 
     <footer class="sheet-foot">
+      <span class="sheet-discount"{% if fulfilment != "own_cup" %} hidden{% endif %}>−{{ own_cup_discount|input_number }}₽ своя тара</span>
       <strong class="sheet-total" x-text="label()">{{ initial_total|rub }}</strong>
       <button type="submit" class="sheet-submit">В заказ</button>
     </footer>

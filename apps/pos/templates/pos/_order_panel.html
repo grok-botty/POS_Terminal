@@ -62,6 +62,9 @@
             <span class="cart-addon">+ {{ addon.name_snapshot }}{% if addon.price_delta_snapshot %} {{ addon.price_delta_snapshot|rub_delta }}{% endif %}</span>
           {% endfor %}
           {% if line.note %}<span class="cart-addon">{{ line.note }}</span>{% endif %}
+          {% if line.own_cup_discount %}
+            <span class="cart-addon cart-discount" title="за каждую штуку">−{{ line.own_cup_discount|input_number }}₽ своя тара</span>
+          {% endif %}
         </button>
         <div class="qty-pill">
           <button type="button"

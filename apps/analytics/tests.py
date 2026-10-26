@@ -7,6 +7,7 @@ from django.test import TestCase
 from apps.analytics import services as an
 from apps.catalog.models import Category, Product
 from apps.orders import services as os_
+from apps.orders.models import Order
 
 
 class CloseDayTests(TestCase):
@@ -44,3 +45,13 @@ class CloseDayTests(TestCase):
         first = an.close_day()
         second = an.close_day()
         self.assertEqual(first.pk, second.pk)
+
+    def test_top_products_subtracts_own_cup_per_unit(self) -> None:
+        own = self._paid(self.latte, 2)
+        os_.update_line(own.lines.get(), fulfilment=Order.Fulfilment.OWN_CUP)
+        self._paid(self.tea, 1)
+
+        rows = {row["name_snapshot"]: row for row in an.top_products()}
+        self.assertEqual(rows["Латте"]["qty"], 2)
+        self.assertEqual(rows["Латте"]["revenue"], Decimal("360.00"))
+        self.assertEqual(rows["Чай"]["revenue"], Decimal("150.00"))

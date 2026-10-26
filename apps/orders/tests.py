@@ -91,6 +91,50 @@ class OrderServicesTests(TestCase):
         self.assertEqual(order.place_title(), "здесь")
         self.assertFalse(order.is_takeaway())
 
+    def test_own_cup_discount_is_twenty_per_unit(self) -> None:
+        order = services.create_order()
+        line = services.add_line(
+            order,
+            self.latte,
+            quantity=2,
+            modifier_ids=[self.milk_oat.id],
+            fulfilment=Order.Fulfilment.OWN_CUP,
+        )
+        # (200 + 40 − 20) × 2 = 440; без скидки было бы 480
+        self.assertEqual(line.own_cup_discount(), Decimal("20.00"))
+        self.assertEqual(line.subtotal(), Decimal("440.00"))
+        self.assertEqual(order.total_amount, Decimal("440.00"))
+
+        services.update_line(line, fulfilment=Order.Fulfilment.HERE)
+        line.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(line.own_cup_discount(), Decimal("0.00"))
+        self.assertEqual(line.subtotal(), Decimal("480.00"))
+        self.assertEqual(order.total_amount, Decimal("480.00"))
+
+        services.update_line(line, fulfilment=Order.Fulfilment.TO_GO)
+        line.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(line.subtotal(), Decimal("480.00"))
+        self.assertEqual(order.total_amount, Decimal("480.00"))
+
+        services.update_line(line, fulfilment=Order.Fulfilment.OWN_CUP)
+        line.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(line.subtotal(), Decimal("440.00"))
+        self.assertEqual(order.total_amount, Decimal("440.00"))
+
+        cheap = Product.objects.create(
+            name="Сироп отдельно", price=Decimal("15"), category=self.cat
+        )
+        floored = services.add_line(
+            order, cheap, quantity=2, fulfilment=Order.Fulfilment.OWN_CUP
+        )
+        self.assertEqual(floored.subtotal(), Decimal("0.00"))
+        self.assertEqual(floored.own_cup_discount(), Decimal("15.00"))
+        order.refresh_from_db()
+        self.assertEqual(order.total_amount, Decimal("440.00"))
+
     def test_create_order_retries_a_duplicate_short_code(self) -> None:
         first = services.create_order()
         codes = iter([first.short_code, "ZZ-99"])

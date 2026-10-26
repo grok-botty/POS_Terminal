@@ -137,6 +137,59 @@ class RegisterScreenTests(TestCase):
         self.assertContains(added, "line-place-to_go")
         self.assertContains(added, ">с собой<")
 
+    def test_own_cup_knocks_twenty_off_each_unit(self):
+        self.client.get(reverse("pos:register"))
+        sheet = self.client.get(reverse("pos:modifier_picker", args=[self.espresso.id]))
+        self.assertContains(sheet, "cupOff: 20")
+        self.assertContains(sheet, "−20₽ своя тара")
+        self.assertContains(sheet, "150 ₽")
+        fresh_note = sheet.content.decode().split('class="sheet-discount"', 1)[1].split(">", 1)[0]
+        self.assertIn("hidden", fresh_note)
+
+        added = self.client.post(
+            reverse("pos:add_line", args=[self.espresso.id]),
+            data={"fulfilment": Order.Fulfilment.OWN_CUP},
+        )
+        self.assertContains(added, "130 ₽")
+        self.assertContains(added, "−20₽ своя тара")
+        self.assertContains(added, "cart-discount")
+        order = Order.objects.get(status=Order.Status.NEW)
+        line = order.lines.get()
+        self.assertEqual(line.fulfilment, Order.Fulfilment.OWN_CUP)
+        self.assertEqual(line.subtotal(), Decimal("130.00"))
+        self.assertEqual(order.total_amount, Decimal("130.00"))
+
+        edited = self.client.get(reverse("pos:line_edit", args=[line.id]))
+        self.assertContains(edited, 'value="own_cup" checked')
+        self.assertContains(edited, "130 ₽")
+        open_note = edited.content.decode().split('class="sheet-discount"', 1)[1].split(">", 1)[0]
+        self.assertNotIn("hidden", open_note)
+
+        doubled = self.client.post(reverse("pos:line_inc", args=[line.id]))
+        self.assertContains(doubled, "260 ₽")
+        self.assertContains(doubled, "−20₽ своя тара")
+        order.refresh_from_db()
+        self.assertEqual(order.total_amount, Decimal("260.00"))
+
+        back = self.client.post(
+            reverse("pos:line_edit", args=[line.id]),
+            data={"fulfilment": Order.Fulfilment.HERE},
+        )
+        self.assertContains(back, "300 ₽")
+        self.assertNotContains(back, "своя тара")
+        order.refresh_from_db()
+        self.assertEqual(order.total_amount, Decimal("300.00"))
+
+        away = self.client.post(
+            reverse("pos:line_edit", args=[line.id]),
+            data={"fulfilment": Order.Fulfilment.TO_GO},
+        )
+        self.assertContains(away, "300 ₽")
+        self.assertNotContains(away, "своя тара")
+        line.refresh_from_db()
+        self.assertEqual(line.fulfilment, Order.Fulfilment.TO_GO)
+        self.assertEqual(line.subtotal(), Decimal("300.00"))
+
     def test_addon_sheet_preselects_default_and_prices_the_line(self):
         response = self.client.get(reverse("pos:modifier_picker", args=[self.latte.id]))
         self.assertContains(response, "Латте · допы")
@@ -936,6 +989,12 @@ class StatsByShiftDateTests(TestCase):
         }
         self.assertEqual(masha["Эспрессо"], "да")
         self.assertEqual(masha["Латте"], "нет")
+        amount = header.index("Сумма позиции")
+        masha_amounts = {
+            row[item]: row[amount] for row in rows[1:] if row[guest] == "Маша"
+        }
+        self.assertEqual(masha_amounts["Эспрессо"], "150.00")
+        self.assertEqual(masha_amounts["Латте"], "180.00")
         petya = [row[takeaway] for row in rows[1:] if row[guest] == "Петя"]
         self.assertEqual(petya, ["нет"])
 

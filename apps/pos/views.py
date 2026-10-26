@@ -25,7 +25,13 @@ from django.views.decorators.http import require_http_methods
 
 from apps.catalog.models import Category, Modifier, Product
 from apps.orders import services as order_services
-from apps.orders.models import Order, OrderLine, Shift
+from apps.orders.models import (
+    OWN_CUP_DISCOUNT,
+    Order,
+    OrderLine,
+    Shift,
+    price_with_own_cup,
+)
 
 SESSION_ORDER_KEY = "current_order_id"
 
@@ -330,8 +336,9 @@ def _picker_context(
         "selected_ids": selected_ids,
         "line": line,
         "fulfilment": fulfilment,
-        "initial_total": product.price + extra,
+        "initial_total": price_with_own_cup(product.price + extra, fulfilment),
         "base_price": product.price,
+        "own_cup_discount": OWN_CUP_DISCOUNT,
     }
 
 

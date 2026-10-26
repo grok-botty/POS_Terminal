@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, F, Sum
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.orders.models import Order, OrderLine
@@ -67,18 +67,32 @@ def revenue_series(days: int = 14) -> list[dict]:
 
 
 def top_products(days: int = 30, limit: int = 10) -> list[dict]:
-    """Вернуть топ товаров по продажам за последние ``days`` дней."""
+    """Вернуть топ товаров по продажам за последние ``days`` дней.
+
+    Выручка строки — та же :meth:`OrderLine.subtotal`, что в чеке:
+    допы и скидка «в свою» уже внутри.
+    """
     start = timezone.localdate() - timedelta(days=days - 1)
-    rows = (
-        OrderLine.objects.filter(order__created_at__date__gte=start, order__is_paid=True)
-        .values("name_snapshot")
-        .annotate(
-            qty=Sum("quantity"),
-            revenue=Sum(F("unit_price") * F("quantity")),
+    lines = (
+        OrderLine.objects.filter(
+            order__created_at__date__gte=start, order__is_paid=True
         )
-        .order_by("-revenue")[:limit]
+        .prefetch_related("modifiers")
     )
-    return list(rows)
+    buckets: dict[str, dict] = {}
+    for line in lines:
+        row = buckets.get(line.name_snapshot)
+        if row is None:
+            row = {
+                "name_snapshot": line.name_snapshot,
+                "qty": 0,
+                "revenue": Decimal("0.00"),
+            }
+            buckets[line.name_snapshot] = row
+        row["qty"] += line.quantity
+        row["revenue"] += line.subtotal()
+    ranked = sorted(buckets.values(), key=lambda row: row["revenue"], reverse=True)
+    return ranked[:limit]
 
 
 def hourly_load(days: int = 7) -> list[dict]:
