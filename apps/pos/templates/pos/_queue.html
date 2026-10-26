@@ -47,8 +47,18 @@
           {% endif %}
         </span>
         <span class="q-pills">
-          {% if not order.is_paid %}
-            <span class="pay-pill" title="не оплачено" aria-label="не оплачено">💸</span>
+          {% if order.is_paid %}
+            <span class="pay-pill is-paid" title="оплачено" aria-label="оплачено">💸</span>
+          {% else %}
+            <button type="button"
+                    class="pay-pill"
+                    title="не оплачено"
+                    aria-label="не оплачено"
+                    hx-post="{% url 'pos:queue_pay' order.id %}?queue={{ queue_name }}"
+                    hx-target="#barista-queue"
+                    hx-swap="outerHTML"
+                    hx-sync="#barista-queue:abort"
+                    hx-on:click="event.stopPropagation()">💸</button>
           {% endif %}
           <button type="button"
                   class="status-pill status-{{ order.status }}"
@@ -78,7 +88,14 @@
                        hx-on:click="event.stopPropagation()">
                 <span class="q-item-name">{{ line.name_snapshot }}</span>
               </label>
-              {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
+              <span class="q-item-side">
+                <span class="line-place{% if order.is_takeaway %} line-place-to_go{% else %} line-place-here{% endif %}"
+                      title="{{ order.place_title }}">
+                  <span class="line-place-dot" aria-hidden="true"></span>
+                  <span class="line-place-label">{{ order.place_title }}</span>
+                </span>
+                {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
+              </span>
             </div>
             {% for addon in line|visible_addons %}
               <p class="q-addon">+ {{ addon.name_snapshot }}{% if addon.price_delta_snapshot %} {{ addon.price_delta_snapshot|rub_delta }}{% endif %}</p>

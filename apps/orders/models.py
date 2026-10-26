@@ -280,12 +280,12 @@ class Order(models.Model):
         return self.fulfilment == self.Fulfilment.TO_GO
 
     def place_mark(self) -> str:
-        """Знак на карточке очереди: 🏃 на вынос, ☕ здесь."""
+        """Знак на карточке очереди: 🏃 с собой, ☕ здесь."""
         return "🏃" if self.is_takeaway() else "☕"
 
     def place_title(self) -> str:
-        """Подсказка знака: «на вынос» или «здесь»."""
-        return "на вынос" if self.is_takeaway() else "здесь"
+        """Подсказка знака: «с собой» или «здесь»."""
+        return "с собой" if self.is_takeaway() else "здесь"
 
     def is_active(self) -> bool:
         """Вернуть ``True``, если заказ должен показываться в активной очереди."""

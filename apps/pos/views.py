@@ -231,10 +231,16 @@ def _reload_order(order: Order) -> Order:
     )
 
 
-def _order_panel(request: HttpRequest, order: Order | None = None) -> HttpResponse:
+def _order_panel(
+    request: HttpRequest, order: Order | None = None, *, oob: bool = False
+) -> HttpResponse:
     if order is None:
         order = _get_or_create_current_order(request)
-    return render(request, "pos/_order_panel.html", {"order": _reload_order(order)})
+    return render(
+        request,
+        "pos/_order_panel.html",
+        {"order": _reload_order(order), "oob": oob},
+    )
 
 
 def _active_products():
@@ -286,7 +292,13 @@ def _menu_request_context(request: HttpRequest) -> dict:
     return _menu_context(category, request.GET.get("q", ""))
 
 
-def _picker_context(product: Product, *, selected_ids: set[int] | None, line=None) -> dict:
+def _picker_context(
+    product: Product,
+    *,
+    selected_ids: set[int] | None,
+    line=None,
+    fulfilment: str | None = None,
+) -> dict:
     groups = list(
         product.modifier_groups.prefetch_related(
             Prefetch(
@@ -309,11 +321,14 @@ def _picker_context(product: Product, *, selected_ids: set[int] | None, line=Non
         for option in group.options.all():
             if option.id in selected_ids:
                 extra += option.price_delta
+    if fulfilment not in dict(Order.Fulfilment.choices):
+        fulfilment = line.order.fulfilment if line is not None else Order.Fulfilment.HERE
     return {
         "product": product,
         "groups": groups,
         "selected_ids": selected_ids,
         "line": line,
+        "fulfilment": fulfilment,
         "initial_total": product.price + extra,
         "base_price": product.price,
     }
@@ -486,10 +501,15 @@ def modifier_picker(request: HttpRequest, product_id: int) -> HttpResponse:
         order = _get_or_create_current_order(request)
         order_services.add_line(order, product, quantity=1)
         return _order_panel(request, order)
+    current = _session_order(request)
     return render(
         request,
         "pos/_modifier_picker.html",
-        _picker_context(product, selected_ids=None),
+        _picker_context(
+            product,
+            selected_ids=None,
+            fulfilment=current.fulfilment if current else None,
+        ),
     )
 
 
@@ -510,7 +530,11 @@ def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
         if note:
             order_services.update_line(line, note=note)
     except ValueError as exc:
-        context = _picker_context(product, selected_ids=set(modifier_ids))
+        context = _picker_context(
+            product,
+            selected_ids=set(modifier_ids),
+            fulfilment=_posted_fulfilment(request) or order.fulfilment,
+        )
         context["error"] = str(exc)
         context["line_note"] = request.POST.get("line_note", "")
         resp = render(request, "pos/_modifier_picker.html", context)
@@ -518,7 +542,13 @@ def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
         resp["HX-Reswap"] = "innerHTML"
         resp["HX-Keep-Picker"] = "1"
         return resp
-    return _order_panel(request, order)
+    fulfilment = _posted_fulfilment(request)
+    if fulfilment:
+        order_services.update_order_meta(order, fulfilment=fulfilment)
+    response = _order_panel(request, order)
+    if fulfilment and order.status != Order.Status.NEW:
+        return _refresh_queue(response)
+    return response
 
 
 @login_required(login_url="accounts:login")
@@ -547,7 +577,10 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
         )
     except ValueError as exc:
         context = _picker_context(
-            line.product, selected_ids=set(modifier_ids), line=line
+            line.product,
+            selected_ids=set(modifier_ids),
+            line=line,
+            fulfilment=_posted_fulfilment(request),
         )
         context["error"] = str(exc)
         context["line_note"] = request.POST.get("line_note", "")
@@ -556,6 +589,9 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
         resp["HX-Reswap"] = "innerHTML"
         resp["HX-Keep-Picker"] = "1"
         return resp
+    fulfilment = _posted_fulfilment(request)
+    if fulfilment:
+        order_services.update_order_meta(line.order, fulfilment=fulfilment)
     response = _order_panel(request, line.order)
     if line.order.status != Order.Status.NEW:
         return _refresh_queue(response)
@@ -604,7 +640,7 @@ def line_remove(request: HttpRequest, line_id: int) -> HttpResponse:
 @open_shift_required
 @require_http_methods(["POST"])
 def order_meta(request: HttpRequest) -> HttpResponse:
-    """Обновить имя гостя, комментарий и «здесь» / «на вынос». Панель не перерисовываем."""
+    """Обновить имя гостя, комментарий и «здесь» / «с собой». Панель не перерисовываем."""
     order = _get_or_create_current_order(request)
     fulfilment = None
     if request.POST.get("fulfilment_touched"):
@@ -678,6 +714,36 @@ def order_discard(request: HttpRequest) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @open_shift_required
 @require_http_methods(["POST"])
+def queue_pay(request: HttpRequest, pk: int) -> HttpResponse:
+    """Один тап по значку денег в очереди: отметить заказ оплаченным.
+
+    Повторный вызов ничего не снимает: оплаченный значок только показывает
+    состояние. Правая кнопка «Оплачено» по-прежнему закрывает чек.
+    Если этот заказ открыт справа, панель перерисовывается вместе с очередью.
+    """
+    order = get_object_or_404(
+        Order,
+        pk=pk,
+        status__in=(
+            Order.Status.IN_PROGRESS,
+            Order.Status.READY,
+            Order.Status.CANCELLED,
+        ),
+    )
+    try:
+        order_services.pay_order(order)
+    except ValueError:
+        return queue_fragment(request)
+    response = queue_fragment(request)
+    if request.session.get(SESSION_ORDER_KEY) == order.pk:
+        panel = _order_panel(request, order, oob=True)
+        response.content += panel.content
+    return response
+
+
+@login_required(login_url="accounts:login")
+@open_shift_required
+@require_http_methods(["POST"])
 def queue_cycle(request: HttpRequest, pk: int) -> HttpResponse:
     """Один тап по статусу: не готово → готово → отменено."""
     order = get_object_or_404(Order, pk=pk)
@@ -714,6 +780,14 @@ def queue_line_handed(request: HttpRequest, line_id: int) -> HttpResponse:
     )
     order_services.set_line_handed_out(line)
     return queue_fragment(request)
+
+
+def _posted_fulfilment(request: HttpRequest) -> str | None:
+    """«здесь» / «с собой» из шторки допов, если значение из списка."""
+    value = request.POST.get("fulfilment")
+    if value in dict(Order.Fulfilment.choices):
+        return value
+    return None
 
 
 def _posted_modifier_ids(request: HttpRequest) -> list[int]:

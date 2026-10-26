@@ -1,5 +1,5 @@
 {% load pos_extras %}
-<aside id="order-panel" class="order-col">
+<aside id="order-panel" class="order-col"{% if oob %} hx-swap-oob="true"{% endif %}>
   <h2>Текущий заказ</h2>
   {% if order.status != "new" %}
     <p class="editing-note">Из очереди{% if not order.is_paid %} · не оплачено{% else %} · оплачено{% endif %}</p>
@@ -83,23 +83,6 @@
       <p class="cart-hint">тап по строке → править допы</p>
     {% endif %}
   </div>
-
-  <form class="place-form"
-        hx-post="{% url 'pos:order_meta' %}"
-        hx-trigger="change"
-        hx-swap="none">
-    {% csrf_token %}
-    <div class="place-toggle" role="radiogroup" aria-label="Где заказ">
-      <label class="place-opt">
-        <input type="radio" name="fulfilment" value="here"{% if order.fulfilment != "to_go" %} checked{% endif %} />
-        <span>здесь</span>
-      </label>
-      <label class="place-opt">
-        <input type="radio" name="fulfilment" value="to_go"{% if order.fulfilment == "to_go" %} checked{% endif %} />
-        <span>на вынос</span>
-      </label>
-    </div>
-  </form>
 
   <div class="cart-total">
     <span>Итого</span>

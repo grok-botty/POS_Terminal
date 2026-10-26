@@ -920,6 +920,22 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   background: #faebeb;
   white-space: nowrap;
 }
+button.pay-pill {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  color: inherit;
+}
+button.pay-pill:hover { background: #f6d4d4; }
+.pay-pill.is-paid {
+  background: #eef0f3;
+  opacity: 0.5;
+  filter: grayscale(1);
+  cursor: default;
+}
 .q-card-cancelled .q-name { color: #737a8c; }
 .status-pill {
   appearance: none;
@@ -985,6 +1001,31 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   cursor: pointer;
 }
 .q-item-name { min-width: 0; }
+.q-item-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.line-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.line-place-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.line-place-here { background: #e3f0c4; color: #3f6b14; }
+.line-place-to_go { background: #d3e4f8; color: #1d5aa6; }
 .q-qty { color: #737a8c; font-weight: 400; font-size: 12px; }
 .q-addon { margin: 0; color: #737a8c; font-size: 12px; }
 .q-comment {
@@ -1193,7 +1234,6 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .cart-price { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .cart-empty { color: #737a8c; font-size: 13px; margin: 12px 0; }
 .cart-hint { margin: 8px 0 0; color: #737a8c; font-size: 11px; }
-.place-form { margin: 0; }
 .place-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1227,8 +1267,12 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   font-weight: 600;
   color: #737a8c;
 }
-.place-opt:has(input:checked) span {
-  background: #e5edfa;
+.place-opt-here:has(input:checked) span {
+  background: #e3f0c4;
+  color: #1f242e;
+}
+.place-opt-to_go:has(input:checked) span {
+  background: #d3e4f8;
   color: #1f242e;
 }
 .place-opt:has(input:focus-visible) span {
@@ -1276,8 +1320,8 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 .pay-btn.is-paid:hover {
   opacity: 1;
   cursor: default;
-  background: var(--success);
-  color: #fff;
+  background: #e4eee5;
+  color: #7a8a7c;
 }
 .cart-secondary { display: flex; gap: 8px; }
 .cart-secondary form { flex: 1; }
@@ -1362,6 +1406,8 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
   color: #fff;
 }
 .addon-chip:has(input:checked) small { color: #d9e5ff; }
+.sheet-place { display: flex; flex-direction: column; gap: 6px; }
+.sheet-place-label { color: #737a8c; font-size: 12px; font-weight: 600; }
 .sheet-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 .sheet-total { font-size: 20px; font-weight: 700; }
 .sheet-submit {

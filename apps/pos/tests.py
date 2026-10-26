@@ -263,8 +263,11 @@ class RegisterScreenTests(TestCase):
         self.assertEqual(unpaid.barista_label(), "Готово")
         self.assertEqual(unpaid.unpaid_label(), "")
         queue = self.client.get(reverse("pos:queue_fragment"))
-        self.assertNotContains(queue, "💸")
+        self.assertContains(queue, "💸")
+        self.assertContains(queue, "pay-pill is-paid")
+        self.assertContains(queue, 'aria-label="оплачено"')
         self.assertNotContains(queue, "не оплачено")
+        self.assertNotContains(queue, reverse("pos:queue_pay", args=[unpaid.id]))
         self.assertContains(queue, "Готово")
 
     def test_open_queue_card_loads_and_edits_the_right_panel(self):
@@ -289,9 +292,8 @@ class RegisterScreenTests(TestCase):
         self.assertContains(response, "Из очереди")
         self.assertContains(response, "не оплачено")
         self.assertContains(response, "Новый чек")
-        self.assertContains(response, 'value="to_go" checked')
-        self.assertContains(response, ">на вынос<")
-        self.assertContains(response, ">здесь<")
+        self.assertNotContains(response, "place-toggle")
+        self.assertNotContains(response, 'name="fulfilment"')
         self.assertContains(response, ">2<")
         self.assertNotContains(response, "В очередь")
 
@@ -307,6 +309,10 @@ class RegisterScreenTests(TestCase):
 
         sheet = self.client.get(reverse("pos:line_edit", args=[line.id]))
         self.assertContains(sheet, "Латте · допы")
+        self.assertContains(sheet, "place-toggle")
+        self.assertContains(sheet, 'value="to_go" checked')
+        self.assertContains(sheet, ">с собой<")
+        self.assertContains(sheet, ">здесь<")
 
         self.client.post(
             reverse("pos:order_pay"),
@@ -316,8 +322,10 @@ class RegisterScreenTests(TestCase):
         self.assertTrue(order.is_paid)
         self.assertEqual(order.status, Order.Status.IN_PROGRESS)
         queue = self.client.get(reverse("pos:queue_fragment"))
-        self.assertEqual(queue.content.decode().count("💸"), 1)
-        self.assertEqual(queue.content.decode().count("не оплачено"), 2)
+        body = queue.content.decode()
+        self.assertEqual(body.count("💸"), 2)
+        self.assertEqual(body.count("pay-pill is-paid"), 1)
+        self.assertEqual(body.count("не оплачено"), 2)
 
         self.client.get(reverse("pos:queue_open", args=[order.id]))
         released = self.client.post(reverse("pos:order_discard"))
@@ -353,41 +361,109 @@ class RegisterScreenTests(TestCase):
         self.assertContains(response, "Латте · допы")
         self.assertContains(response, "В заказ")
 
-    def test_place_toggle_defaults_to_here_and_edits_a_reopened_order(self):
+    def test_place_toggle_lives_in_the_addon_sheet(self):
         panel = self.client.get(reverse("pos:register"))
-        self.assertContains(panel, 'name="fulfilment" value="here" checked')
-        self.assertContains(panel, ">здесь<")
-        self.assertContains(panel, ">на вынос<")
-        self.assertNotContains(panel, 'name="fulfilment" value="here" disabled')
-        self.assertNotContains(panel, 'name="fulfilment" value="to_go" disabled')
+        self.assertNotContains(panel, "place-toggle")
+        self.assertNotContains(panel, 'name="fulfilment"')
+        self.assertNotContains(panel, ">с собой<")
         draft = Order.objects.get(status=Order.Status.NEW)
         self.assertEqual(draft.fulfilment, Order.Fulfilment.HERE)
         self.assertFalse(draft.is_takeaway())
 
-        switched = self.client.post(
-            reverse("pos:order_meta"), {"fulfilment": Order.Fulfilment.TO_GO}
+        sheet = self.client.get(reverse("pos:modifier_picker", args=[self.latte.id]))
+        self.assertContains(sheet, "place-toggle")
+        self.assertContains(sheet, 'name="fulfilment" value="here" checked')
+        self.assertContains(sheet, ">здесь<")
+        self.assertContains(sheet, ">с собой<")
+        self.assertNotContains(sheet, ">на вынос<")
+        self.assertNotContains(sheet, 'name="fulfilment" value="here" disabled')
+
+        added = self.client.post(
+            reverse("pos:add_line", args=[self.latte.id]),
+            data={
+                "group_%s" % self.milk.id: str(self.regular.id),
+                "fulfilment": Order.Fulfilment.TO_GO,
+            },
         )
-        self.assertEqual(switched.status_code, 204)
+        self.assertNotContains(added, "place-toggle")
         draft.refresh_from_db()
         self.assertTrue(draft.is_takeaway())
 
         services.add_line(draft, self.espresso, quantity=1)
         services.enqueue_order(draft)
         opened = self.client.get(reverse("pos:queue_open", args=[draft.id]))
-        self.assertContains(opened, 'value="to_go" checked')
-        self.assertNotContains(opened, 'name="fulfilment" value="to_go" disabled')
+        self.assertNotContains(opened, "place-toggle")
+        self.assertNotContains(opened, 'name="fulfilment"')
 
-        edited = self.client.post(
-            reverse("pos:order_meta"), {"fulfilment": Order.Fulfilment.HERE}
+        line = draft.lines.get(product=self.latte)
+        edited_sheet = self.client.get(reverse("pos:line_edit", args=[line.id]))
+        self.assertContains(edited_sheet, 'value="to_go" checked')
+        self.assertContains(edited_sheet, ">с собой<")
+
+        self.client.post(
+            reverse("pos:line_edit", args=[line.id]),
+            data={
+                "group_%s" % self.milk.id: str(self.regular.id),
+                "fulfilment": Order.Fulfilment.HERE,
+            },
         )
-        self.assertEqual(edited.status_code, 204)
         draft.refresh_from_db()
         self.assertFalse(draft.is_takeaway())
         queue = self.client.get(reverse("pos:queue_fragment"))
+        body = queue.content.decode()
+        self.assertEqual(body.count("line-place-here"), draft.lines.count())
         self.assertContains(queue, "place-pill-here")
         self.assertContains(queue, 'title="здесь"')
         self.assertContains(queue, "☕")
+        self.assertNotContains(queue, "line-place-to_go")
         self.assertNotContains(queue, "place-pill-to_go")
+
+    def test_money_icon_pays_the_queue_order_and_stays_muted(self):
+        self.client.get(reverse("pos:register"))
+        self.client.post(reverse("pos:add_line", args=[self.espresso.id]))
+        self.client.post(reverse("pos:order_enqueue"), data={"guest_name": "Квакша"})
+        order = Order.objects.get(guest_name="Квакша")
+        self.client.get(reverse("pos:queue_open", args=[order.id]))
+
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        self.assertContains(queue, reverse("pos:queue_pay", args=[order.id]))
+        self.assertContains(queue, 'aria-label="не оплачено"')
+        self.assertContains(queue, "q-card-unpaid")
+        self.assertNotContains(queue, "pay-pill is-paid")
+
+        paid = self.client.post(reverse("pos:queue_pay", args=[order.id]))
+        self.assertContains(paid, "pay-pill is-paid")
+        self.assertContains(paid, 'aria-label="оплачено"')
+        self.assertContains(paid, 'class="pay-btn is-paid"')
+        self.assertContains(paid, 'hx-swap-oob="true"')
+        self.assertNotContains(paid, reverse("pos:queue_pay", args=[order.id]))
+        self.assertNotContains(paid, "q-card-unpaid")
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertEqual(self.client.session[SESSION_ORDER_KEY], order.id)
+
+        again = self.client.post(reverse("pos:queue_pay", args=[order.id]))
+        self.assertContains(again, "pay-pill is-paid")
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertIsNotNone(order.paid_at)
+
+        css = (Path(settings.BASE_DIR) / "static/css/app.css").read_text()
+        paid_btn = css.split(".pay-btn.is-paid,", 1)[1].split("}", 1)[0]
+        paid_icon = css.split(".pay-pill.is-paid", 1)[1].split("}", 1)[0]
+        here_toggle = css.split(".place-opt-here:has(input:checked) span", 1)[1].split("}", 1)[0]
+        away_toggle = css.split(".place-opt-to_go:has(input:checked) span", 1)[1].split("}", 1)[0]
+        here_line = css.split(".line-place-here", 1)[1].split("}", 1)[0]
+        away_line = css.split(".line-place-to_go", 1)[1].split("}", 1)[0]
+        self.assertIn("#e4eee5", paid_btn)
+        self.assertNotIn("var(--success)", paid_btn)
+        self.assertIn("grayscale(1)", paid_icon)
+        self.assertIn("opacity: 0.5", paid_icon)
+        self.assertIn("#e3f0c4", here_toggle)
+        self.assertIn("#d3e4f8", away_toggle)
+        self.assertIn("#e3f0c4", here_line)
+        self.assertIn("#d3e4f8", away_line)
 
 
 class ShiftScreenTests(TestCase):
@@ -817,14 +893,16 @@ class HandoutQueueScreenTests(TestCase):
         self.assertIn("q-times", here_lead)
         self.assertLess(here_lead.index("place-pill-here"), here_lead.index("оплата"))
         self.assertIn("place-pill-to_go", away_lead)
-        self.assertIn('title="на вынос"', away_lead)
+        self.assertIn('title="с собой"', away_lead)
         self.assertIn("🏃", away_lead)
         self.assertLess(away_lead.index("place-pill-to_go"), away_lead.index("оплата"))
 
         ready_queue = self.client.get(reverse("pos:queue_fragment") + "?queue=ready")
         self.assertContains(ready_queue, "Готовый")
         self.assertContains(ready_queue, "place-pill-to_go")
-        self.assertContains(ready_queue, 'title="на вынос"')
+        self.assertContains(ready_queue, 'title="с собой"')
+        self.assertContains(ready_queue, "line-place-to_go")
+        self.assertContains(ready_queue, ">с собой<")
         self.assertContains(ready_queue, "🏃")
         self.assertNotContains(ready_queue, "Взале")
 
@@ -832,6 +910,8 @@ class HandoutQueueScreenTests(TestCase):
         self.assertContains(cancelled, "Снятый")
         self.assertContains(cancelled, "place-pill-here")
         self.assertContains(cancelled, 'title="здесь"')
+        self.assertContains(cancelled, "line-place-here")
+        self.assertContains(cancelled, ">здесь<")
         self.assertContains(cancelled, "☕")
         self.assertNotContains(cancelled, "Навынос")
 
@@ -850,7 +930,7 @@ class HandoutQueueScreenTests(TestCase):
         self.assertContains(screen, "Взале")
         self.assertContains(screen, "place-pill-to_go")
         self.assertContains(screen, "place-pill-here")
-        self.assertContains(screen, 'title="на вынос"')
+        self.assertContains(screen, 'title="с собой"')
         self.assertContains(screen, 'title="здесь"')
 
     def test_queue_switch_scopes_to_the_shift_and_sorts_oldest_first(self):

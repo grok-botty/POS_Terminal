@@ -37,6 +37,20 @@
       <p class="panel-error">{{ error }}</p>
     {% endif %}
 
+    <div class="sheet-place">
+      <span class="sheet-place-label">Где заказ</span>
+      <div class="place-toggle" role="radiogroup" aria-label="Где заказ">
+        <label class="place-opt place-opt-here">
+          <input type="radio" name="fulfilment" value="here"{% if fulfilment != "to_go" %} checked{% endif %} />
+          <span>здесь</span>
+        </label>
+        <label class="place-opt place-opt-to_go">
+          <input type="radio" name="fulfilment" value="to_go"{% if fulfilment == "to_go" %} checked{% endif %} />
+          <span>с собой</span>
+        </label>
+      </div>
+    </div>
+
     {% for group in groups %}
       <fieldset class="addon-group">
         <legend>{{ group.name }}</legend>

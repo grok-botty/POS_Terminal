@@ -50,7 +50,7 @@ class OrderServicesTests(TestCase):
         away = services.create_order(fulfilment=Order.Fulfilment.TO_GO)
         self.assertTrue(away.is_takeaway())
         self.assertEqual(away.place_mark(), "🏃")
-        self.assertEqual(away.place_title(), "на вынос")
+        self.assertEqual(away.place_title(), "с собой")
         services.update_order_meta(away, fulfilment=Order.Fulfilment.HERE)
         away.refresh_from_db()
         self.assertFalse(away.is_takeaway())
