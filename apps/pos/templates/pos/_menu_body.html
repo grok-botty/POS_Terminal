@@ -9,27 +9,17 @@
   {% endif %}
   <div class="product-grid">
     {% for product in cat.filtered_products %}
-      {% if product.modifier_groups.all %}
-        <button type="button"
-                class="product-tile"
-                hx-get="{% url 'pos:modifier_picker' product.id %}"
-                hx-target="#picker-target"
-                hx-swap="innerHTML">
-          <span class="p-name">{{ product.name }}</span>
-          <span class="p-price">{{ product.price|rub }}</span>
+      <button type="button"
+              class="product-tile"
+              hx-get="{% url 'pos:modifier_picker' product.id %}"
+              hx-target="#picker-target"
+              hx-swap="innerHTML">
+        <span class="p-name">{{ product.name }}</span>
+        <span class="p-price">{{ product.price|rub }}</span>
+        {% if product.modifier_groups.all %}
           <span class="p-addons">допы →</span>
-        </button>
-      {% else %}
-        <button type="button"
-                class="product-tile"
-                hx-post="{% url 'pos:add_line' product.id %}"
-                hx-include="#order-fields"
-                hx-target="#order-panel"
-                hx-swap="outerHTML">
-          <span class="p-name">{{ product.name }}</span>
-          <span class="p-price">{{ product.price|rub }}</span>
-        </button>
-      {% endif %}
+        {% endif %}
+      </button>
     {% endfor %}
   </div>
 {% empty %}

@@ -79,7 +79,7 @@ class RegisterScreenTests(TestCase):
 
         upper = self.client.get(url, {"q": "ЭСПР"})
         self.assertContains(upper, "Эспрессо")
-        self.assertContains(upper, reverse("pos:add_line", args=[self.espresso.id]))
+        self.assertContains(upper, reverse("pos:modifier_picker", args=[self.espresso.id]))
         self.assertNotContains(upper, "Латте")
 
         tagged = self.client.get(url, {"q": "лат", "category": self.food.id})
@@ -104,14 +104,30 @@ class RegisterScreenTests(TestCase):
         self.assertNotContains(body, 'id="menu-search"')
         self.assertNotContains(body, "menu-tab")
 
-    def test_item_without_addons_is_one_tap(self):
+    def test_item_without_addons_opens_the_place_sheet(self):
         self.client.get(reverse("pos:register"))
-        response = self.client.post(reverse("pos:add_line", args=[self.espresso.id]))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Эспрессо")
-        self.assertContains(response, "150 ₽")
+        sheet = self.client.get(reverse("pos:modifier_picker", args=[self.espresso.id]))
+        self.assertEqual(sheet.status_code, 200)
+        self.assertContains(sheet, "Эспрессо · допы")
+        self.assertContains(sheet, "place-toggle")
+        self.assertContains(sheet, 'name="fulfilment" value="here" checked')
+        self.assertContains(sheet, ">здесь<")
+        self.assertContains(sheet, ">с собой<")
+        self.assertContains(sheet, "В заказ")
+        self.assertNotContains(sheet, "addon-chip")
         order = Order.objects.get(status=Order.Status.NEW)
+        self.assertFalse(order.lines.exists())
+
+        added = self.client.post(
+            reverse("pos:add_line", args=[self.espresso.id]),
+            data={"fulfilment": Order.Fulfilment.TO_GO},
+        )
+        self.assertContains(added, "Эспрессо")
+        self.assertContains(added, "150 ₽")
+        self.assertNotContains(added, "place-toggle")
+        order.refresh_from_db()
         self.assertEqual(order.total_amount, Decimal("150.00"))
+        self.assertTrue(order.is_takeaway())
 
     def test_addon_sheet_preselects_default_and_prices_the_line(self):
         response = self.client.get(reverse("pos:modifier_picker", args=[self.latte.id]))

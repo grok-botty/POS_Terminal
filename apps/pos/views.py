@@ -1,9 +1,9 @@
 """Вьюхи экрана кассы (на HTMX).
 
-Экран — три колонки: очередь баристы, меню и текущий заказ. Товар без
-групп допов попадает в заказ одним нажатием; товар с допами открывает
-шторку с чипами. Любое изменение возвращает фрагмент, без полной
-перезагрузки страницы.
+Экран — три колонки: очередь баристы, меню и текущий заказ. Любая
+позиция открывает шторку: у товара с допами там чипы, у товара без
+групп — формат «здесь / с собой» и кнопка «В заказ». Любое изменение
+возвращает фрагмент, без полной перезагрузки страницы.
 """
 
 from __future__ import annotations
@@ -495,12 +495,8 @@ def queue_open(request: HttpRequest, pk: int) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @open_shift_required
 def modifier_picker(request: HttpRequest, product_id: int) -> HttpResponse:
-    """Шторка допов. У товара без групп допов позиция сразу попадает в заказ."""
+    """Шторка допов. Без групп допов в ней остаются формат и «В заказ»."""
     product = get_object_or_404(Product, pk=product_id, is_active=True)
-    if not product.modifier_groups.exists():
-        order = _get_or_create_current_order(request)
-        order_services.add_line(order, product, quantity=1)
-        return _order_panel(request, order)
     current = _session_order(request)
     return render(
         request,
