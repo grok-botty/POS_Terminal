@@ -2,7 +2,8 @@
 
 Экран — три колонки: очередь баристы, меню и текущий заказ. Любая
 позиция открывает шторку: у товара с допами там чипы, у товара без
-групп — формат «здесь / с собой» и кнопка «В заказ». Любое изменение
+групп — формат «здесь / с собой / в свою» и кнопка «В заказ». Формат
+хранится на строке. Любое изменение
 возвращает фрагмент, без полной перезагрузки страницы.
 """
 
@@ -322,7 +323,7 @@ def _picker_context(
             if option.id in selected_ids:
                 extra += option.price_delta
     if fulfilment not in dict(Order.Fulfilment.choices):
-        fulfilment = line.order.fulfilment if line is not None else Order.Fulfilment.HERE
+        fulfilment = line.fulfilment if line is not None else Order.Fulfilment.HERE
     return {
         "product": product,
         "groups": groups,
@@ -495,17 +496,16 @@ def queue_open(request: HttpRequest, pk: int) -> HttpResponse:
 @login_required(login_url="accounts:login")
 @open_shift_required
 def modifier_picker(request: HttpRequest, product_id: int) -> HttpResponse:
-    """Шторка допов. Без групп допов в ней остаются формат и «В заказ»."""
+    """Шторка допов. Без групп допов в ней остаются формат и «В заказ».
+
+    Новая позиция всегда открывается с «здесь», даже если соседняя строка
+    уже «с собой» или «в свою».
+    """
     product = get_object_or_404(Product, pk=product_id, is_active=True)
-    current = _session_order(request)
     return render(
         request,
         "pos/_modifier_picker.html",
-        _picker_context(
-            product,
-            selected_ids=None,
-            fulfilment=current.fulfilment if current else None,
-        ),
+        _picker_context(product, selected_ids=None),
     )
 
 
@@ -518,9 +518,14 @@ def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
     modifier_ids = _posted_modifier_ids(request)
     order = _get_or_create_current_order(request)
     _apply_posted_meta(request, order)
+    fulfilment = _posted_fulfilment(request)
     try:
         line = order_services.add_line(
-            order, product, quantity=1, modifier_ids=modifier_ids
+            order,
+            product,
+            quantity=1,
+            modifier_ids=modifier_ids,
+            fulfilment=fulfilment,
         )
         note = request.POST.get("line_note")
         if note:
@@ -529,7 +534,7 @@ def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
         context = _picker_context(
             product,
             selected_ids=set(modifier_ids),
-            fulfilment=_posted_fulfilment(request) or order.fulfilment,
+            fulfilment=fulfilment,
         )
         context["error"] = str(exc)
         context["line_note"] = request.POST.get("line_note", "")
@@ -538,11 +543,8 @@ def add_line(request: HttpRequest, product_id: int) -> HttpResponse:
         resp["HX-Reswap"] = "innerHTML"
         resp["HX-Keep-Picker"] = "1"
         return resp
-    fulfilment = _posted_fulfilment(request)
-    if fulfilment:
-        order_services.update_order_meta(order, fulfilment=fulfilment)
     response = _order_panel(request, order)
-    if fulfilment and order.status != Order.Status.NEW:
+    if order.status != Order.Status.NEW:
         return _refresh_queue(response)
     return response
 
@@ -565,11 +567,13 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
 
     modifier_ids = _posted_modifier_ids(request)
     _apply_posted_meta(request, line.order)
+    fulfilment = _posted_fulfilment(request)
     try:
         order_services.update_line(
             line,
             modifier_ids=modifier_ids,
             note=request.POST.get("line_note", ""),
+            fulfilment=fulfilment,
         )
     except ValueError as exc:
         context = _picker_context(
@@ -585,9 +589,6 @@ def line_edit(request: HttpRequest, line_id: int) -> HttpResponse:
         resp["HX-Reswap"] = "innerHTML"
         resp["HX-Keep-Picker"] = "1"
         return resp
-    fulfilment = _posted_fulfilment(request)
-    if fulfilment:
-        order_services.update_order_meta(line.order, fulfilment=fulfilment)
     response = _order_panel(request, line.order)
     if line.order.status != Order.Status.NEW:
         return _refresh_queue(response)
@@ -636,7 +637,11 @@ def line_remove(request: HttpRequest, line_id: int) -> HttpResponse:
 @open_shift_required
 @require_http_methods(["POST"])
 def order_meta(request: HttpRequest) -> HttpResponse:
-    """Обновить имя гостя, комментарий и «здесь» / «с собой». Панель не перерисовываем."""
+    """Обновить имя гостя и комментарий. Панель не перерисовываем.
+
+    Если в теле есть ``fulfilment``, пишется только поле заказа (запас
+    для пустого чека). Строки этот запрос не перекрашивает.
+    """
     order = _get_or_create_current_order(request)
     fulfilment = None
     if request.POST.get("fulfilment_touched"):
@@ -779,7 +784,7 @@ def queue_line_handed(request: HttpRequest, line_id: int) -> HttpResponse:
 
 
 def _posted_fulfilment(request: HttpRequest) -> str | None:
-    """«здесь» / «с собой» из шторки допов, если значение из списка."""
+    """«здесь», «с собой» или «в свою» из шторки, если значение из списка."""
     value = request.POST.get("fulfilment")
     if value in dict(Order.Fulfilment.choices):
         return value
@@ -1022,7 +1027,7 @@ def stats_csv(request: HttpRequest) -> HttpResponse:
             order.guest_name,
             order.barista_label() if order.status != Order.Status.HANDED_OFF else "Отдан",
             "да" if order.is_paid else "нет",
-            "да" if order.is_takeaway() else "нет",
+            "да" if line.is_takeaway() else "нет",
             line.name_snapshot,
             line.quantity,
             addons,

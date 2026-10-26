@@ -422,10 +422,18 @@ def add_line(
     product: Product,
     quantity: int = 1,
     modifier_ids: Iterable[int] | None = None,
+    *,
+    fulfilment: str | None = None,
 ) -> OrderLine:
-    """Добавить товар в ``order`` вместе с опционально выбранными модификаторами."""
+    """Добавить товар в ``order`` вместе с опционально выбранными модификаторами.
+
+    ``fulfilment`` пишется на позицию. Пустое или чужое значение — «здесь».
+    Поле заказа при этом не меняется: у соседних строк формат остаётся своим.
+    """
     if quantity < 1:
         raise ValueError("Количество должно быть >= 1.")
+    if fulfilment not in dict(Order.Fulfilment.choices):
+        fulfilment = Order.Fulfilment.HERE
 
     line = OrderLine.objects.create(
         order=order,
@@ -433,6 +441,7 @@ def add_line(
         name_snapshot=product.name,
         unit_price=product.price,
         quantity=quantity,
+        fulfilment=fulfilment,
     )
 
     if modifier_ids:
@@ -493,8 +502,12 @@ def update_line(
     *,
     modifier_ids: Iterable[int] | None = None,
     note: str | None = None,
+    fulfilment: str | None = None,
 ) -> OrderLine:
-    """Заменить допы и заметку позиции и пересчитать сумму заказа."""
+    """Заменить допы, заметку и формат позиции и пересчитать сумму заказа.
+
+    Формат меняется только у этой строки. Заказ и остальные позиции не трогаются.
+    """
     if modifier_ids is not None:
         modifiers = list(
             Modifier.objects.filter(id__in=list(modifier_ids), is_active=True)
@@ -509,9 +522,15 @@ def update_line(
                 name_snapshot=modifier.name,
                 price_delta_snapshot=modifier.price_delta,
             )
+    changed: list[str] = []
+    if fulfilment is not None and fulfilment in dict(Order.Fulfilment.choices):
+        line.fulfilment = fulfilment
+        changed.append("fulfilment")
     if note is not None:
         line.note = note.strip()
-        line.save(update_fields=["note"])
+        changed.append("note")
+    if changed:
+        line.save(update_fields=changed)
     line.order.recalc_total()
     sync_auto_ready(line.order)
     return line
@@ -548,7 +567,11 @@ def update_order_meta(
     comment: str | None = None,
     fulfilment: str | None = None,
 ) -> Order:
-    """Обновить лёгкую метаинформацию заказа (имя гостя, комментарий, «в зале/с собой»)."""
+    """Обновить имя гостя, комментарий и формат пустого заказа.
+
+    ``fulfilment`` здесь — запасное поле заказа. На уже добавленные
+    позиции оно не копируется: у каждой строки свой формат.
+    """
     changed = []
     if guest_name is not None:
         order.guest_name = guest_name

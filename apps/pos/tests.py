@@ -113,6 +113,8 @@ class RegisterScreenTests(TestCase):
         self.assertContains(sheet, 'name="fulfilment" value="here" checked')
         self.assertContains(sheet, ">здесь<")
         self.assertContains(sheet, ">с собой<")
+        self.assertContains(sheet, ">в свою<")
+        self.assertContains(sheet, 'value="own_cup"')
         self.assertContains(sheet, "В заказ")
         self.assertNotContains(sheet, 'class="addon-chip')
         self.assertNotContains(sheet, 'class="addon-search"')
@@ -129,7 +131,11 @@ class RegisterScreenTests(TestCase):
         self.assertNotContains(added, "place-toggle")
         order.refresh_from_db()
         self.assertEqual(order.total_amount, Decimal("150.00"))
+        self.assertEqual(order.fulfilment, Order.Fulfilment.HERE)
+        self.assertEqual(order.lines.get().fulfilment, Order.Fulfilment.TO_GO)
         self.assertTrue(order.is_takeaway())
+        self.assertContains(added, "line-place-to_go")
+        self.assertContains(added, ">с собой<")
 
     def test_addon_sheet_preselects_default_and_prices_the_line(self):
         response = self.client.get(reverse("pos:modifier_picker", args=[self.latte.id]))
@@ -300,7 +306,11 @@ class RegisterScreenTests(TestCase):
         )
         services.update_order_meta(order, comment="без сахара")
         services.add_line(
-            order, self.latte, quantity=2, modifier_ids=[self.oat.id]
+            order,
+            self.latte,
+            quantity=2,
+            modifier_ids=[self.oat.id],
+            fulfilment=Order.Fulfilment.TO_GO,
         )
         services.enqueue_order(order)
 
@@ -399,6 +409,7 @@ class RegisterScreenTests(TestCase):
         self.assertContains(sheet, 'name="fulfilment" value="here" checked')
         self.assertContains(sheet, ">здесь<")
         self.assertContains(sheet, ">с собой<")
+        self.assertContains(sheet, ">в свою<")
         self.assertNotContains(sheet, ">на вынос<")
         self.assertNotContains(sheet, 'name="fulfilment" value="here" disabled')
 
@@ -441,6 +452,100 @@ class RegisterScreenTests(TestCase):
         self.assertContains(queue, "☕")
         self.assertNotContains(queue, "line-place-to_go")
         self.assertNotContains(queue, "place-pill-to_go")
+
+    def test_two_lines_keep_different_places_in_the_queue_and_panel(self):
+        self.client.get(reverse("pos:register"))
+        fresh = self.client.get(reverse("pos:modifier_picker", args=[self.espresso.id]))
+        self.assertContains(fresh, 'value="here" checked')
+        self.assertContains(fresh, 'value="own_cup"')
+        self.assertNotContains(fresh, 'value="to_go" checked')
+        self.assertNotContains(fresh, 'value="own_cup" checked')
+
+        self.client.post(
+            reverse("pos:add_line", args=[self.espresso.id]),
+            data={"fulfilment": Order.Fulfilment.TO_GO},
+        )
+        again = self.client.get(reverse("pos:modifier_picker", args=[self.croissant.id]))
+        self.assertContains(again, 'value="here" checked')
+        self.assertNotContains(again, 'value="to_go" checked')
+
+        panel = self.client.post(
+            reverse("pos:add_line", args=[self.croissant.id]),
+            data={"fulfilment": Order.Fulfilment.HERE},
+        )
+        draft = Order.objects.get(status=Order.Status.NEW)
+        by_product = {line.product_id: line for line in draft.lines.all()}
+        self.assertEqual(by_product[self.espresso.id].fulfilment, Order.Fulfilment.TO_GO)
+        self.assertEqual(by_product[self.croissant.id].fulfilment, Order.Fulfilment.HERE)
+        self.assertEqual(draft.fulfilment, Order.Fulfilment.HERE)
+        self.assertIsNone(draft.uniform_fulfilment())
+        self.assertFalse(draft.is_takeaway())
+
+        body = panel.content.decode()
+        espresso = body.split(">Эспрессо<", 1)[1].split('class="cart-line"', 1)[0]
+        croissant = body.split(">Круассан<", 1)[1].split("cart-hint", 1)[0]
+        self.assertIn("line-place-to_go", espresso)
+        self.assertIn(">с собой<", espresso)
+        self.assertNotIn("line-place-here", espresso)
+        self.assertIn("line-place-here", croissant)
+        self.assertIn(">здесь<", croissant)
+        self.assertNotIn("line-place-to_go", croissant)
+
+        espresso_line = by_product[self.espresso.id]
+        edited = self.client.get(reverse("pos:line_edit", args=[espresso_line.id]))
+        self.assertContains(edited, 'value="to_go" checked')
+        self.assertContains(edited, ">в свою<")
+        saved = self.client.post(
+            reverse("pos:line_edit", args=[espresso_line.id]),
+            data={"fulfilment": Order.Fulfilment.OWN_CUP},
+        )
+        espresso_line.refresh_from_db()
+        croissant_line = by_product[self.croissant.id]
+        croissant_line.refresh_from_db()
+        draft.refresh_from_db()
+        self.assertEqual(espresso_line.fulfilment, Order.Fulfilment.OWN_CUP)
+        self.assertEqual(espresso_line.place_title(), "в свою")
+        self.assertEqual(croissant_line.fulfilment, Order.Fulfilment.HERE)
+        self.assertEqual(draft.fulfilment, Order.Fulfilment.HERE)
+        self.assertIsNone(draft.uniform_fulfilment())
+
+        saved_body = saved.content.decode()
+        own = saved_body.split(">Эспрессо<", 1)[1].split('class="cart-line"', 1)[0]
+        stay = saved_body.split(">Круассан<", 1)[1].split("cart-hint", 1)[0]
+        self.assertIn("line-place-own_cup", own)
+        self.assertIn(">в свою<", own)
+        self.assertNotIn("line-place-here", own)
+        self.assertNotIn("line-place-to_go", own)
+        self.assertIn("line-place-here", stay)
+        self.assertIn(">здесь<", stay)
+
+        services.enqueue_order(draft)
+        queue = self.client.get(reverse("pos:queue_fragment"))
+        queue_body = queue.content.decode()
+        self.assertNotIn("place-pill-", queue_body)
+        drink = queue_body.split(">Эспрессо<", 1)[1].split('class="q-item"', 1)[0]
+        food = queue_body.split(">Круассан<", 1)[1]
+        self.assertIn("line-place-own_cup", drink)
+        self.assertIn(">в свою<", drink)
+        self.assertNotIn("line-place-here", drink)
+        self.assertIn("line-place-here", food)
+        self.assertIn(">здесь<", food)
+        self.assertNotIn("line-place-own_cup", food)
+        self.assertNotIn("line-place-to_go", food)
+
+        screen = self.client.get(reverse("orders:queue"))
+        screen_body = screen.content.decode()
+        drink_at = screen_body.index("Эспрессо")
+        food_at = screen_body.index("Круассан")
+        handed = screen_body[drink_at:screen_body.index("</li>", drink_at)]
+        baked = screen_body[food_at:screen_body.index("</li>", food_at)]
+        self.assertIn("line-place-own_cup", handed)
+        self.assertIn(">в свою<", handed)
+        self.assertNotIn("line-place-here", handed)
+        self.assertIn("line-place-here", baked)
+        self.assertIn(">здесь<", baked)
+        self.assertNotIn("line-place-own_cup", baked)
+        self.assertNotIn("place-pill-", screen_body)
 
     def test_money_icon_pays_the_queue_order_and_stays_muted(self):
         self.client.get(reverse("pos:register"))
@@ -488,6 +593,11 @@ class RegisterScreenTests(TestCase):
         self.assertIn("#d3e4f8", away_toggle)
         self.assertIn("#e3f0c4", here_line)
         self.assertIn("#d3e4f8", away_line)
+        own_line = css.split(".line-place-own_cup", 1)[1].split("}", 1)[0]
+        own_toggle = css.split(".place-opt-own_cup:has(input:checked) span", 1)[1].split("}", 1)[0]
+        self.assertIn("#f8e3c4", own_line)
+        self.assertIn("#8a5a12", own_line)
+        self.assertIn("#f8e3c4", own_toggle)
 
 
 class ShiftScreenTests(TestCase):
@@ -806,8 +916,10 @@ class StatsByShiftDateTests(TestCase):
 
         evening = Order.objects.get(shift=self.late, status=Order.Status.READY)
         evening.guest_name = "Маша"
-        evening.fulfilment = Order.Fulfilment.TO_GO
+        evening.fulfilment = Order.Fulfilment.HERE
         evening.save(update_fields=["guest_name", "fulfilment"])
+        evening.lines.update(fulfilment=Order.Fulfilment.TO_GO)
+        services.add_line(evening, self.latte, fulfilment=Order.Fulfilment.OWN_CUP)
         dropped = Order.objects.get(shift=self.late, status=Order.Status.CANCELLED)
         dropped.guest_name = "Петя"
         dropped.save(update_fields=["guest_name"])
@@ -818,9 +930,14 @@ class StatsByShiftDateTests(TestCase):
         self.assertIn("На вынос", header)
         takeaway = header.index("На вынос")
         guest = header.index("Гость")
-        by_guest = {row[guest]: row[takeaway] for row in rows[1:]}
-        self.assertEqual(by_guest["Маша"], "да")
-        self.assertEqual(by_guest["Петя"], "нет")
+        item = header.index("Позиция")
+        masha = {
+            row[item]: row[takeaway] for row in rows[1:] if row[guest] == "Маша"
+        }
+        self.assertEqual(masha["Эспрессо"], "да")
+        self.assertEqual(masha["Латте"], "нет")
+        petya = [row[takeaway] for row in rows[1:] if row[guest] == "Петя"]
+        self.assertEqual(petya, ["нет"])
 
 
 class HandoutQueueScreenTests(TestCase):
@@ -891,9 +1008,9 @@ class HandoutQueueScreenTests(TestCase):
         with patch("apps.orders.services.timezone.now", return_value=opened + timedelta(minutes=12)):
             here = self._enqueue("Взале")
             away = self._enqueue("Навынос")
-            services.update_order_meta(away, fulfilment=Order.Fulfilment.TO_GO)
+            away.lines.update(fulfilment=Order.Fulfilment.TO_GO)
             ready = self._enqueue("Готовый")
-            services.update_order_meta(ready, fulfilment=Order.Fulfilment.TO_GO)
+            ready.lines.update(fulfilment=Order.Fulfilment.TO_GO)
             services.mark_ready(ready)
             dropped = self._enqueue("Снятый", pay=False)
             services.cancel_order(dropped)
@@ -947,6 +1064,8 @@ class HandoutQueueScreenTests(TestCase):
         self.assertIn("border-radius: 999px", pill)
         self.assertIn("#e3f0c4", here_rule)
         self.assertIn("#d3e4f8", away_rule)
+        own_rule = css.split(".place-pill-own_cup", 1)[1].split("}", 1)[0]
+        self.assertIn("#f8e3c4", own_rule)
 
         services.hand_off(here)
         screen = self.client.get(reverse("orders:queue"))

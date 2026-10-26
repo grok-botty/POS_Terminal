@@ -62,12 +62,16 @@
       <span class="sheet-place-label">Где заказ</span>
       <div class="place-toggle" role="radiogroup" aria-label="Где заказ">
         <label class="place-opt place-opt-here">
-          <input type="radio" name="fulfilment" value="here"{% if fulfilment != "to_go" %} checked{% endif %} />
+          <input type="radio" name="fulfilment" value="here"{% if fulfilment == "here" %} checked{% endif %} />
           <span>здесь</span>
         </label>
         <label class="place-opt place-opt-to_go">
           <input type="radio" name="fulfilment" value="to_go"{% if fulfilment == "to_go" %} checked{% endif %} />
           <span>с собой</span>
+        </label>
+        <label class="place-opt place-opt-own_cup">
+          <input type="radio" name="fulfilment" value="own_cup"{% if fulfilment == "own_cup" %} checked{% endif %} />
+          <span>в свою</span>
         </label>
       </div>
     </div>

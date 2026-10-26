@@ -36,9 +36,13 @@
       <header class="q-card-head">
         <span class="q-lead">
           <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
-          <span class="place-pill{% if order.is_takeaway %} place-pill-to_go{% else %} place-pill-here{% endif %}"
-                title="{{ order.place_title }}"
-                aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
+          {% with place=order.uniform_fulfilment %}
+            {% if place %}
+              <span class="place-pill place-pill-{{ place }}"
+                    title="{{ order.place_title }}"
+                    aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
+            {% endif %}
+          {% endwith %}
           {% if order.payment_clock or order.handout_clock %}
             <span class="q-times">
               {% if order.payment_clock %}<span>оплата {{ order.payment_clock }}</span>{% endif %}
@@ -89,10 +93,10 @@
                 <span class="q-item-name">{{ line.name_snapshot }}</span>
               </label>
               <span class="q-item-side">
-                <span class="line-place{% if order.is_takeaway %} line-place-to_go{% else %} line-place-here{% endif %}"
-                      title="{{ order.place_title }}">
+                <span class="line-place line-place-{{ line.fulfilment }}"
+                      title="{{ line.place_title }}">
                   <span class="line-place-dot" aria-hidden="true"></span>
-                  <span class="line-place-label">{{ order.place_title }}</span>
+                  <span class="line-place-label">{{ line.place_title }}</span>
                 </span>
                 {% if line.quantity > 1 %}<span class="q-qty">×{{ line.quantity }}</span>{% endif %}
               </span>

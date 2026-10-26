@@ -51,7 +51,13 @@
                 hx-get="{% url 'pos:line_edit' line.id %}"
                 hx-target="#picker-target"
                 hx-swap="innerHTML">
-          <span class="cart-name">{{ line.name_snapshot }}</span>
+          <span class="cart-name-row">
+            <span class="cart-name">{{ line.name_snapshot }}</span>
+            <span class="line-place line-place-{{ line.fulfilment }}" title="{{ line.place_title }}">
+              <span class="line-place-dot" aria-hidden="true"></span>
+              <span class="line-place-label">{{ line.place_title }}</span>
+            </span>
+          </span>
           {% for addon in line|visible_addons %}
             <span class="cart-addon">+ {{ addon.name_snapshot }}{% if addon.price_delta_snapshot %} {{ addon.price_delta_snapshot|rub_delta }}{% endif %}</span>
           {% endfor %}

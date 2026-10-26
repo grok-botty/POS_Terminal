@@ -909,6 +909,7 @@ div.flash-error { border: 1px solid #f5c2c2; background: #fdecec; color: #7f1d1d
 }
 .place-pill-here { background: #e3f0c4; }
 .place-pill-to_go { background: #d3e4f8; }
+.place-pill-own_cup { background: #f8e3c4; }
 .pay-pill {
   display: inline-flex;
   align-items: center;
@@ -1026,6 +1027,7 @@ button.pay-pill:hover { background: #f6d4d4; }
 }
 .line-place-here { background: #e3f0c4; color: #3f6b14; }
 .line-place-to_go { background: #d3e4f8; color: #1d5aa6; }
+.line-place-own_cup { background: #f8e3c4; color: #8a5a12; }
 .q-qty { color: #737a8c; font-weight: 400; font-size: 12px; }
 .q-addon { margin: 0; color: #737a8c; font-size: 12px; }
 .q-comment {
@@ -1208,6 +1210,12 @@ button.pay-pill:hover { background: #f6d4d4; }
   font-family: inherit;
   color: inherit;
 }
+.cart-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .cart-name { font-size: 16px; font-weight: 600; }
 .cart-addon { color: #737a8c; font-size: 12px; }
 .qty-pill {
@@ -1236,7 +1244,7 @@ button.pay-pill:hover { background: #f6d4d4; }
 .cart-hint { margin: 8px 0 0; color: #737a8c; font-size: 11px; }
 .place-toggle {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 4px;
   background: #fff;
   border-radius: 8px;
@@ -1273,6 +1281,10 @@ button.pay-pill:hover { background: #f6d4d4; }
 }
 .place-opt-to_go:has(input:checked) span {
   background: #d3e4f8;
+  color: #1f242e;
+}
+.place-opt-own_cup:has(input:checked) span {
+  background: #f8e3c4;
   color: #1f242e;
 }
 .place-opt:has(input:focus-visible) span {

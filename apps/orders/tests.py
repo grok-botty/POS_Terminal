@@ -56,6 +56,41 @@ class OrderServicesTests(TestCase):
         away.refresh_from_db()
         self.assertFalse(away.is_takeaway())
 
+    def test_each_line_keeps_its_own_place(self) -> None:
+        order = services.create_order()
+        here = services.add_line(order, self.latte, fulfilment=Order.Fulfilment.HERE)
+        away = services.add_line(order, self.latte, fulfilment=Order.Fulfilment.TO_GO)
+        own = services.add_line(order, self.latte, fulfilment=Order.Fulfilment.OWN_CUP)
+
+        self.assertEqual(here.place_title(), "здесь")
+        self.assertEqual(here.place_mark(), "☕")
+        self.assertEqual(away.place_title(), "с собой")
+        self.assertTrue(away.is_takeaway())
+        self.assertEqual(own.fulfilment, Order.Fulfilment.OWN_CUP)
+        self.assertEqual(own.place_title(), "в свою")
+        self.assertEqual(own.place_mark(), "🫙")
+        self.assertFalse(own.is_takeaway())
+
+        order.refresh_from_db()
+        self.assertEqual(order.fulfilment, Order.Fulfilment.HERE)
+        self.assertIsNone(order.uniform_fulfilment())
+        self.assertFalse(order.is_takeaway())
+        self.assertEqual(order.place_title(), "")
+        self.assertEqual(order.place_mark(), "")
+
+        services.update_order_meta(order, fulfilment=Order.Fulfilment.TO_GO)
+        away.refresh_from_db()
+        own.refresh_from_db()
+        self.assertEqual(away.fulfilment, Order.Fulfilment.TO_GO)
+        self.assertEqual(own.fulfilment, Order.Fulfilment.OWN_CUP)
+
+        services.update_line(away, fulfilment=Order.Fulfilment.HERE)
+        services.update_line(own, fulfilment=Order.Fulfilment.HERE)
+        order.refresh_from_db()
+        self.assertEqual(order.uniform_fulfilment(), Order.Fulfilment.HERE)
+        self.assertEqual(order.place_title(), "здесь")
+        self.assertFalse(order.is_takeaway())
+
     def test_create_order_retries_a_duplicate_short_code(self) -> None:
         first = services.create_order()
         codes = iter([first.short_code, "ZZ-99"])

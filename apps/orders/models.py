@@ -149,6 +149,24 @@ def _generate_short_code() -> str:
     return f"{secrets.choice(alphabet)}{secrets.choice(alphabet)}-{secrets.randbelow(90) + 10}"
 
 
+def _place_mark(value: str | None) -> str:
+    """Знак формата. Пустая строка, если формат не задан."""
+    return {
+        Order.Fulfilment.HERE: "☕",
+        Order.Fulfilment.TO_GO: "🏃",
+        Order.Fulfilment.OWN_CUP: "🫙",
+    }.get(value or "", "")
+
+
+def _place_title(value: str | None) -> str:
+    """Короткая подпись формата. Пустая строка, если формат не задан."""
+    return {
+        Order.Fulfilment.HERE: "здесь",
+        Order.Fulfilment.TO_GO: "с собой",
+        Order.Fulfilment.OWN_CUP: "в свою",
+    }.get(value or "", "")
+
+
 class Order(models.Model):
     """Заказ одного гостя.
 
@@ -167,6 +185,7 @@ class Order(models.Model):
     class Fulfilment(models.TextChoices):
         HERE = "here", "В зале"
         TO_GO = "to_go", "С собой"
+        OWN_CUP = "own_cup", "В свою"
 
     short_code = models.CharField(
         "Номер",
@@ -185,6 +204,10 @@ class Order(models.Model):
         max_length=8,
         choices=Fulfilment.choices,
         default=Fulfilment.HERE,
+        help_text=(
+            "Формат пустого заказа. У позиций формат свой: общая пилюля "
+            "на карточке есть только когда он совпадает у всех строк."
+        ),
     )
     is_paid = models.BooleanField("Оплачен", default=False)
     total_amount = models.DecimalField(
@@ -275,17 +298,38 @@ class Order(models.Model):
             return ""
         return "не оплачено"
 
+    def uniform_fulfilment(self) -> str | None:
+        """Формат заказа, если он один на все позиции.
+
+        Пустой заказ берёт своё поле :attr:`fulfilment`. Если строки
+        расходятся, возвращает ``None``: общая пилюля не рисуется,
+        у каждой строки остаётся своя.
+        """
+        values = {line.fulfilment for line in self.lines.all()}
+        if not values:
+            return self.fulfilment
+        if len(values) == 1:
+            return values.pop()
+        return None
+
     def is_takeaway(self) -> bool:
-        """Заказ «на вынос». По умолчанию заказ «здесь»."""
-        return self.fulfilment == self.Fulfilment.TO_GO
+        """Заказ целиком «с собой»: все позиции «с собой».
+
+        Смешанный заказ и «в свою» — не на вынос. Пустой заказ смотрит
+        на своё поле :attr:`fulfilment`.
+        """
+        return self.uniform_fulfilment() == self.Fulfilment.TO_GO
 
     def place_mark(self) -> str:
-        """Знак на карточке очереди: 🏃 с собой, ☕ здесь."""
-        return "🏃" if self.is_takeaway() else "☕"
+        """Знак общей пилюли: ☕ здесь, 🏃 с собой, 🫙 в свою.
+
+        Пустая строка, если у позиций разные форматы.
+        """
+        return _place_mark(self.uniform_fulfilment())
 
     def place_title(self) -> str:
-        """Подсказка знака: «с собой» или «здесь»."""
-        return "с собой" if self.is_takeaway() else "здесь"
+        """Подпись общей пилюли. Пустая строка, если форматы строк разные."""
+        return _place_title(self.uniform_fulfilment())
 
     def is_active(self) -> bool:
         """Вернуть ``True``, если заказ должен показываться в активной очереди."""
@@ -353,6 +397,13 @@ class OrderLine(models.Model):
     )
     quantity = models.PositiveIntegerField("Количество", default=1)
     note = models.CharField("Заметка к позиции", max_length=200, blank=True)
+    fulfilment = models.CharField(
+        "Формат",
+        max_length=8,
+        choices=Order.Fulfilment.choices,
+        default=Order.Fulfilment.HERE,
+        help_text="здесь, с собой или своя тара. У каждой позиции своё значение.",
+    )
     handed_out = models.BooleanField(
         "Отдали",
         default=False,
@@ -370,6 +421,18 @@ class OrderLine(models.Model):
             Decimal("0.00"),
         )
         return (self.unit_price + modifiers_total) * self.quantity
+
+    def is_takeaway(self) -> bool:
+        """Позиция «с собой». «В свою» сюда не входит."""
+        return self.fulfilment == Order.Fulfilment.TO_GO
+
+    def place_mark(self) -> str:
+        """Знак позиции: ☕ здесь, 🏃 с собой, 🫙 в свою."""
+        return _place_mark(self.fulfilment)
+
+    def place_title(self) -> str:
+        """Короткая подпись: «здесь», «с собой» или «в свою»."""
+        return _place_title(self.fulfilment)
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return f"{self.name_snapshot} × {self.quantity}"
