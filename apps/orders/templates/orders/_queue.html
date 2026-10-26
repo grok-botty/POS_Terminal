@@ -12,13 +12,6 @@
           <header>
             <span class="order-code">№{{ order.short_code }}</span>
             <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
-            {% with place=order.uniform_fulfilment %}
-              {% if place %}
-                <span class="place-pill place-pill-{{ place }}"
-                      title="{{ order.place_title }}"
-                      aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
-              {% endif %}
-            {% endwith %}
             <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
           </header>
           <ul class="card-lines">
@@ -78,13 +71,6 @@
           <header>
             <span class="order-code">№{{ order.short_code }}</span>
             <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
-            {% with place=order.uniform_fulfilment %}
-              {% if place %}
-                <span class="place-pill place-pill-{{ place }}"
-                      title="{{ order.place_title }}"
-                      aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
-              {% endif %}
-            {% endwith %}
             <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
           </header>
           {% if order.handout_clock %}<p class="muted">выдан {{ order.handout_clock }}</p>{% endif %}

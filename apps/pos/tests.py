@@ -500,11 +500,11 @@ class RegisterScreenTests(TestCase):
         queue = self.client.get(reverse("pos:queue_fragment"))
         body = queue.content.decode()
         self.assertEqual(body.count("line-place-here"), draft.lines.count())
-        self.assertContains(queue, "place-pill-here")
         self.assertContains(queue, 'title="здесь"')
-        self.assertContains(queue, "☕")
+        self.assertContains(queue, ">здесь<")
+        self.assertNotContains(queue, "place-pill")
+        self.assertNotContains(queue, "☕")
         self.assertNotContains(queue, "line-place-to_go")
-        self.assertNotContains(queue, "place-pill-to_go")
 
     def test_two_lines_keep_different_places_in_the_queue_and_panel(self):
         self.client.get(reverse("pos:register"))
@@ -1037,6 +1037,7 @@ class HandoutQueueScreenTests(TestCase):
         self.assertContains(response, 'id="barista-queue"')
         self.assertNotContains(response, 'id="order-panel"')
         self.assertContains(response, 'aria-label="отдали"')
+        self.assertContains(response, 'class="q-check"')
         self.assertContains(response, "is-handed")
         self.assertContains(response, "event.stopPropagation()")
         self.assertContains(response, "checked")
@@ -1048,6 +1049,17 @@ class HandoutQueueScreenTests(TestCase):
         self.assertNotContains(again, "is-handed")
         line.refresh_from_db()
         self.assertFalse(line.handed_out)
+
+        css = (Path(settings.BASE_DIR) / "static/css/app.css").read_text()
+        box = css.split(".q-check {", 1)[1].split("}", 1)[0]
+        checked = css.split(".q-handout input:checked + .q-check {", 1)[1].split("}", 1)[0]
+        self.assertIn("border-radius: 50%", box)
+        self.assertIn("#eef0f3", box)
+        self.assertIn("#c5cad3", box)
+        self.assertIn("#c5cad3", checked)
+        self.assertNotIn("#38a866", box)
+        self.assertNotIn("#38a866", checked)
+        self.assertNotIn("accent-color", css.split(".q-handout input {", 1)[1].split("}", 1)[0])
 
     def test_unpaid_card_uses_the_full_red_outline_class(self):
         self._enqueue("Квакша", pay=False)
@@ -1087,53 +1099,56 @@ class HandoutQueueScreenTests(TestCase):
 
         here_lead = lead("Взале")
         away_lead = lead("Навынос")
-        self.assertIn("place-pill-here", here_lead)
-        self.assertIn('title="здесь"', here_lead)
-        self.assertIn("☕", here_lead)
+        self.assertNotIn("place-pill", here_lead)
+        self.assertNotIn("☕", here_lead)
+        self.assertNotIn("🏃", here_lead)
         self.assertIn("q-times", here_lead)
-        self.assertLess(here_lead.index("place-pill-here"), here_lead.index("оплата"))
-        self.assertIn("place-pill-to_go", away_lead)
-        self.assertIn('title="с собой"', away_lead)
-        self.assertIn("🏃", away_lead)
-        self.assertLess(away_lead.index("place-pill-to_go"), away_lead.index("оплата"))
+        self.assertIn("оплата", here_lead)
+        self.assertNotIn("place-pill", away_lead)
+        self.assertNotIn("🏃", away_lead)
+        self.assertIn("оплата", away_lead)
+        self.assertNotIn("place-pill", active_body)
+        self.assertIn("line-place-here", active_body)
+        self.assertIn("line-place-to_go", active_body)
+        self.assertIn(">здесь<", active_body)
+        self.assertIn(">с собой<", active_body)
 
         ready_queue = self.client.get(reverse("pos:queue_fragment") + "?queue=ready")
         self.assertContains(ready_queue, "Готовый")
-        self.assertContains(ready_queue, "place-pill-to_go")
         self.assertContains(ready_queue, 'title="с собой"')
         self.assertContains(ready_queue, "line-place-to_go")
         self.assertContains(ready_queue, ">с собой<")
-        self.assertContains(ready_queue, "🏃")
+        self.assertNotContains(ready_queue, "place-pill")
+        self.assertNotContains(ready_queue, "🏃")
         self.assertNotContains(ready_queue, "Взале")
 
         cancelled = self.client.get(reverse("pos:queue_fragment") + "?queue=cancelled")
         self.assertContains(cancelled, "Снятый")
-        self.assertContains(cancelled, "place-pill-here")
         self.assertContains(cancelled, 'title="здесь"')
         self.assertContains(cancelled, "line-place-here")
         self.assertContains(cancelled, ">здесь<")
-        self.assertContains(cancelled, "☕")
+        self.assertNotContains(cancelled, "place-pill")
+        self.assertNotContains(cancelled, "☕")
         self.assertNotContains(cancelled, "Навынос")
 
         css = (Path(settings.BASE_DIR) / "static/css/app.css").read_text()
-        pill = css.split(".place-pill {", 1)[1].split("}", 1)[0]
-        here_rule = css.split(".place-pill-here", 1)[1].split("}", 1)[0]
-        away_rule = css.split(".place-pill-to_go", 1)[1].split("}", 1)[0]
-        self.assertIn("font-size: 16px", pill)
-        self.assertIn("border-radius: 999px", pill)
+        here_rule = css.split(".line-place-here", 1)[1].split("}", 1)[0]
+        away_rule = css.split(".line-place-to_go", 1)[1].split("}", 1)[0]
+        own_rule = css.split(".line-place-own_cup", 1)[1].split("}", 1)[0]
         self.assertIn("#e3f0c4", here_rule)
         self.assertIn("#d3e4f8", away_rule)
-        own_rule = css.split(".place-pill-own_cup", 1)[1].split("}", 1)[0]
         self.assertIn("#f8e3c4", own_rule)
+        self.assertNotIn(".place-pill", css)
 
         services.hand_off(here)
         screen = self.client.get(reverse("orders:queue"))
         self.assertContains(screen, "Навынос")
         self.assertContains(screen, "Взале")
-        self.assertContains(screen, "place-pill-to_go")
-        self.assertContains(screen, "place-pill-here")
+        self.assertContains(screen, "line-place-to_go")
         self.assertContains(screen, 'title="с собой"')
-        self.assertContains(screen, 'title="здесь"')
+        self.assertNotContains(screen, "place-pill")
+        self.assertNotContains(screen, "☕")
+        self.assertNotContains(screen, "🏃")
 
     def test_queue_switch_scopes_to_the_shift_and_sorts_oldest_first(self):
         t0 = datetime(2026, 10, 7, 12, 0, tzinfo=dt_timezone.utc)

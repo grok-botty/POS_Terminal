@@ -36,13 +36,6 @@
       <header class="q-card-head">
         <span class="q-lead">
           <span class="q-name">{{ order.guest_name|default:"Гость" }}</span>
-          {% with place=order.uniform_fulfilment %}
-            {% if place %}
-              <span class="place-pill place-pill-{{ place }}"
-                    title="{{ order.place_title }}"
-                    aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
-            {% endif %}
-          {% endwith %}
           {% if order.payment_clock or order.handout_clock %}
             <span class="q-times">
               {% if order.payment_clock %}<span>оплата {{ order.payment_clock }}</span>{% endif %}
@@ -90,6 +83,7 @@
                        hx-sync="#barista-queue:abort"
                        hx-trigger="change"
                        hx-on:click="event.stopPropagation()">
+                <span class="q-check" aria-hidden="true"></span>
                 <span class="q-item-name">{{ line.name_snapshot }}</span>
               </label>
               <span class="q-item-side">
