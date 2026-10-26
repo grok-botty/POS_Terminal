@@ -149,6 +149,38 @@ def _generate_short_code() -> str:
     return f"{secrets.choice(alphabet)}{secrets.choice(alphabet)}-{secrets.randbelow(90) + 10}"
 
 
+def _place_mark(value: str | None) -> str:
+    """Знак формата. Пустая строка, если формат не задан."""
+    return {
+        Order.Fulfilment.HERE: "☕",
+        Order.Fulfilment.TO_GO: "🏃",
+        Order.Fulfilment.OWN_CUP: "🫙",
+    }.get(value or "", "")
+
+
+def _place_title(value: str | None) -> str:
+    """Короткая подпись формата. Пустая строка, если формат не задан."""
+    return {
+        Order.Fulfilment.HERE: "здесь",
+        Order.Fulfilment.TO_GO: "с собой",
+        Order.Fulfilment.OWN_CUP: "в свою",
+    }.get(value or "", "")
+
+
+# Своя тара: 20 ₽ с каждой штуки. На строку из двух стаканов это 40 ₽.
+OWN_CUP_DISCOUNT = Decimal("20.00")
+
+
+def price_with_own_cup(amount: Decimal, fulfilment: str) -> Decimal:
+    """Цена одной штуки. «В свою» снимает :data:`OWN_CUP_DISCOUNT` и не уходит ниже нуля."""
+    if fulfilment != Order.Fulfilment.OWN_CUP:
+        return amount
+    discounted = amount - OWN_CUP_DISCOUNT
+    if discounted < 0:
+        return Decimal("0.00")
+    return discounted
+
+
 class Order(models.Model):
     """Заказ одного гостя.
 
@@ -167,6 +199,7 @@ class Order(models.Model):
     class Fulfilment(models.TextChoices):
         HERE = "here", "В зале"
         TO_GO = "to_go", "С собой"
+        OWN_CUP = "own_cup", "В свою"
 
     short_code = models.CharField(
         "Номер",
@@ -185,6 +218,10 @@ class Order(models.Model):
         max_length=8,
         choices=Fulfilment.choices,
         default=Fulfilment.HERE,
+        help_text=(
+            "Формат пустого заказа. У позиций формат свой: общая пилюля "
+            "на карточке есть только когда он совпадает у всех строк."
+        ),
     )
     is_paid = models.BooleanField("Оплачен", default=False)
     total_amount = models.DecimalField(
@@ -275,17 +312,38 @@ class Order(models.Model):
             return ""
         return "не оплачено"
 
+    def uniform_fulfilment(self) -> str | None:
+        """Формат заказа, если он один на все позиции.
+
+        Пустой заказ берёт своё поле :attr:`fulfilment`. Если строки
+        расходятся, возвращает ``None``: общая пилюля не рисуется,
+        у каждой строки остаётся своя.
+        """
+        values = {line.fulfilment for line in self.lines.all()}
+        if not values:
+            return self.fulfilment
+        if len(values) == 1:
+            return values.pop()
+        return None
+
     def is_takeaway(self) -> bool:
-        """Заказ «на вынос». По умолчанию заказ «здесь»."""
-        return self.fulfilment == self.Fulfilment.TO_GO
+        """Заказ целиком «с собой»: все позиции «с собой».
+
+        Смешанный заказ и «в свою» — не на вынос. Пустой заказ смотрит
+        на своё поле :attr:`fulfilment`.
+        """
+        return self.uniform_fulfilment() == self.Fulfilment.TO_GO
 
     def place_mark(self) -> str:
-        """Знак на карточке очереди: 🏃 на вынос, ☕ здесь."""
-        return "🏃" if self.is_takeaway() else "☕"
+        """Знак общей пилюли: ☕ здесь, 🏃 с собой, 🫙 в свою.
+
+        Пустая строка, если у позиций разные форматы.
+        """
+        return _place_mark(self.uniform_fulfilment())
 
     def place_title(self) -> str:
-        """Подсказка знака: «на вынос» или «здесь»."""
-        return "на вынос" if self.is_takeaway() else "здесь"
+        """Подпись общей пилюли. Пустая строка, если форматы строк разные."""
+        return _place_title(self.uniform_fulfilment())
 
     def is_active(self) -> bool:
         """Вернуть ``True``, если заказ должен показываться в активной очереди."""
@@ -353,6 +411,13 @@ class OrderLine(models.Model):
     )
     quantity = models.PositiveIntegerField("Количество", default=1)
     note = models.CharField("Заметка к позиции", max_length=200, blank=True)
+    fulfilment = models.CharField(
+        "Формат",
+        max_length=8,
+        choices=Order.Fulfilment.choices,
+        default=Order.Fulfilment.HERE,
+        help_text="здесь, с собой или своя тара. У каждой позиции своё значение.",
+    )
     handed_out = models.BooleanField(
         "Отдали",
         default=False,
@@ -363,13 +428,46 @@ class OrderLine(models.Model):
         verbose_name = "Позиция заказа"
         verbose_name_plural = "Позиции заказа"
 
-    def subtotal(self) -> Decimal:
-        """Вернуть сумму по позиции с учётом ценовых дельт модификаторов."""
+    def unit_before_discount(self) -> Decimal:
+        """Цена одной штуки с допами, до скидки за свою тару."""
         modifiers_total = sum(
             (m.price_delta_snapshot for m in self.modifiers.all()),
             Decimal("0.00"),
         )
-        return (self.unit_price + modifiers_total) * self.quantity
+        return self.unit_price + modifiers_total
+
+    def own_cup_discount(self) -> Decimal:
+        """Скидка за одну штуку. Ноль, если формат не «в свою» или цена уже ноль."""
+        if self.fulfilment != Order.Fulfilment.OWN_CUP:
+            return Decimal("0.00")
+        gross = self.unit_before_discount()
+        if gross <= 0:
+            return Decimal("0.00")
+        if gross < OWN_CUP_DISCOUNT:
+            return gross
+        return OWN_CUP_DISCOUNT
+
+    def subtotal(self) -> Decimal:
+        """Сумма позиции: (цена + допы − скидка за свою тару) × количество.
+
+        Скидка :data:`OWN_CUP_DISCOUNT` снимается с каждой штуки только
+        при формате «в свою». Ниже нуля сумма не уходит.
+        """
+        return price_with_own_cup(
+            self.unit_before_discount(), self.fulfilment
+        ) * self.quantity
+
+    def is_takeaway(self) -> bool:
+        """Позиция «с собой». «В свою» сюда не входит."""
+        return self.fulfilment == Order.Fulfilment.TO_GO
+
+    def place_mark(self) -> str:
+        """Знак позиции: ☕ здесь, 🏃 с собой, 🫙 в свою."""
+        return _place_mark(self.fulfilment)
+
+    def place_title(self) -> str:
+        """Короткая подпись: «здесь», «с собой» или «в свою»."""
+        return _place_title(self.fulfilment)
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return f"{self.name_snapshot} × {self.quantity}"

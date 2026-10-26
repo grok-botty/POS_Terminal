@@ -88,7 +88,9 @@ pos           HTMX-кассовый UI и первичный bootstrap    catalo
 * Windows — ``%LOCALAPPDATA%\CashMachine\cashmachine.sqlite3``.
 
 Путь можно переопределить переменной ``CASHMACHINE_DB_PATH`` (это же
-используется в тестах и Sphinx-сборке).
+используется в тестах и Sphinx-сборке). Файл открывается в режиме WAL:
+читатели очереди не блокируют запись, а при занятом локе соединение
+ждёт до 20 секунд, а не падает с ``database is locked``.
 
 HTMX как middle-ground
 ----------------------

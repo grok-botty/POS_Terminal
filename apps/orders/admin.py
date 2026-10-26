@@ -40,5 +40,5 @@ class OrderAdmin(admin.ModelAdmin):
 
 @admin.register(OrderLine)
 class OrderLineAdmin(admin.ModelAdmin):
-    list_display = ("order", "name_snapshot", "unit_price", "quantity")
+    list_display = ("order", "name_snapshot", "fulfilment", "unit_price", "quantity")
     inlines = [OrderLineModifierInline]

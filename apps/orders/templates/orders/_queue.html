@@ -8,19 +8,20 @@
     <h2>Активные</h2>
     <ul class="order-cards">
       {% for order in active_orders %}
-        <li class="order-card order-card-{{ order.status }} order-card-{{ order.fulfilment }}">
+        <li class="order-card order-card-{{ order.status }}{% if order.uniform_fulfilment %} order-card-{{ order.uniform_fulfilment }}{% endif %}">
           <header>
             <span class="order-code">№{{ order.short_code }}</span>
             <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
-            <span class="place-pill{% if order.is_takeaway %} place-pill-to_go{% else %} place-pill-here{% endif %}"
-                  title="{{ order.place_title }}"
-                  aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
             <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
           </header>
           <ul class="card-lines">
             {% for line in order.lines.all %}
               <li>
                 <span>{{ line.quantity }} × {{ line.name_snapshot }}</span>
+                <span class="line-place line-place-{{ line.fulfilment }}" title="{{ line.place_title }}">
+                  <span class="line-place-dot" aria-hidden="true"></span>
+                  <span class="line-place-label">{{ line.place_title }}</span>
+                </span>
                 {% if line.modifiers.all %}
                   <small>{% for m in line.modifiers.all %}{{ m.name_snapshot }}{% if not forloop.last %}, {% endif %}{% endfor %}</small>
                 {% endif %}
@@ -70,9 +71,6 @@
           <header>
             <span class="order-code">№{{ order.short_code }}</span>
             <span class="order-guest">{{ order.guest_name|default:"—" }}</span>
-            <span class="place-pill{% if order.is_takeaway %} place-pill-to_go{% else %} place-pill-here{% endif %}"
-                  title="{{ order.place_title }}"
-                  aria-label="{{ order.place_title }}">{{ order.place_mark }}</span>
             <span class="order-timer">{{ order.waiting_seconds|minutes }}</span>
           </header>
           {% if order.handout_clock %}<p class="muted">выдан {{ order.handout_clock }}</p>{% endif %}

@@ -13,6 +13,7 @@ urlpatterns = [
     path("panel/", views.order_panel, name="order_panel"),
     path("queue/", views.queue_fragment, name="queue_fragment"),
     path("queue/<int:pk>/", views.queue_open, name="queue_open"),
+    path("queue/<int:pk>/pay/", views.queue_pay, name="queue_pay"),
     path("queue/<int:pk>/cycle/", views.queue_cycle, name="queue_cycle"),
     path("queue/<int:pk>/status/", views.queue_set_status, name="queue_status"),
     path("lines/<int:line_id>/handed/", views.queue_line_handed, name="line_handed"),
