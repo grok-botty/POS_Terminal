@@ -921,8 +921,9 @@ button.pay-pill:hover { background: #f6d4d4; }
   background: #eef0f3;
   opacity: 0.5;
   filter: grayscale(1);
-  cursor: default;
+  cursor: pointer;
 }
+button.pay-pill.is-paid:hover { background: #eef0f3; }
 .q-card-cancelled .q-name { color: #737a8c; }
 .status-pill {
   appearance: none;
@@ -1348,7 +1349,7 @@ button.pay-pill:hover { background: #f6d4d4; }
 .pay-btn.is-paid:disabled,
 .pay-btn.is-paid:hover {
   opacity: 1;
-  cursor: default;
+  cursor: pointer;
   background: #e4eee5;
   color: #7a8a7c;
 }

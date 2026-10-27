@@ -44,19 +44,15 @@
           {% endif %}
         </span>
         <span class="q-pills">
-          {% if order.is_paid %}
-            <span class="pay-pill is-paid" title="оплачено" aria-label="оплачено">💸</span>
-          {% else %}
-            <button type="button"
-                    class="pay-pill"
-                    title="не оплачено"
-                    aria-label="не оплачено"
-                    hx-post="{% url 'pos:queue_pay' order.id %}?queue={{ queue_name }}"
-                    hx-target="#barista-queue"
-                    hx-swap="outerHTML"
-                    hx-sync="#barista-queue:abort"
-                    hx-on:click="event.stopPropagation()">💸</button>
-          {% endif %}
+          <button type="button"
+                  class="pay-pill{% if order.is_paid %} is-paid{% endif %}"
+                  title="{% if order.is_paid %}оплачено{% else %}не оплачено{% endif %}"
+                  aria-label="{% if order.is_paid %}оплачено{% else %}не оплачено{% endif %}"
+                  hx-post="{% url 'pos:queue_pay' order.id %}?queue={{ queue_name }}"
+                  hx-target="#barista-queue"
+                  hx-swap="outerHTML"
+                  hx-sync="#barista-queue:abort"
+                  hx-on:click="event.stopPropagation()">💸</button>
           <button type="button"
                   class="status-pill status-{{ order.status }}"
                   hx-post="{% url 'pos:queue_cycle' order.id %}?queue={{ queue_name }}"
