@@ -350,7 +350,7 @@ class RegisterScreenTests(TestCase):
         self.assertContains(queue, "pay-pill is-paid")
         self.assertContains(queue, 'aria-label="оплачено"')
         self.assertNotContains(queue, "не оплачено")
-        self.assertNotContains(queue, reverse("pos:queue_pay", args=[unpaid.id]))
+        self.assertContains(queue, reverse("pos:queue_pay", args=[unpaid.id]))
         self.assertContains(queue, "Готово")
 
     def test_open_queue_card_loads_and_edits_the_right_panel(self):
@@ -618,18 +618,41 @@ class RegisterScreenTests(TestCase):
         self.assertContains(paid, 'aria-label="оплачено"')
         self.assertContains(paid, 'class="pay-btn is-paid"')
         self.assertContains(paid, 'hx-swap-oob="true"')
-        self.assertNotContains(paid, reverse("pos:queue_pay", args=[order.id]))
+        self.assertContains(paid, reverse("pos:queue_pay", args=[order.id]))
         self.assertNotContains(paid, "q-card-unpaid")
-        order.refresh_from_db()
-        self.assertTrue(order.is_paid)
-        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
-        self.assertEqual(self.client.session[SESSION_ORDER_KEY], order.id)
-
-        again = self.client.post(reverse("pos:queue_pay", args=[order.id]))
-        self.assertContains(again, "pay-pill is-paid")
+        paid_body = paid.content.decode()
+        icon = paid_body.split('class="pay-pill is-paid"', 1)[1].split("</button>", 1)[0]
+        self.assertIn("stopPropagation", icon)
+        self.assertIn(reverse("pos:queue_pay", args=[order.id]), icon)
+        panel_btn = paid_body.split('class="pay-btn is-paid"', 1)[1].split("</button>", 1)[0]
+        self.assertIn(reverse("pos:queue_pay", args=[order.id]), panel_btn)
+        self.assertNotIn("disabled", panel_btn)
         order.refresh_from_db()
         self.assertTrue(order.is_paid)
         self.assertIsNotNone(order.paid_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertEqual(self.client.session[SESSION_ORDER_KEY], order.id)
+
+        cleared = self.client.post(reverse("pos:queue_pay", args=[order.id]))
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+        self.assertIsNone(order.paid_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertEqual(self.client.session[SESSION_ORDER_KEY], order.id)
+        self.assertContains(cleared, "q-card-unpaid")
+        self.assertContains(cleared, 'aria-label="не оплачено"')
+        self.assertNotContains(cleared, "pay-pill is-paid")
+        self.assertNotContains(cleared, 'class="pay-btn is-paid"')
+        self.assertContains(cleared, 'class="pay-btn"')
+        self.assertContains(cleared, "Квакша")
+
+        restored = self.client.post(reverse("pos:queue_pay", args=[order.id]))
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertIsNotNone(order.paid_at)
+        self.assertContains(restored, "pay-pill is-paid")
+        self.assertContains(restored, 'class="pay-btn is-paid"')
+        self.assertEqual(self.client.session[SESSION_ORDER_KEY], order.id)
 
         css = (Path(settings.BASE_DIR) / "static/css/app.css").read_text()
         paid_btn = css.split(".pay-btn.is-paid,", 1)[1].split("}", 1)[0]
@@ -651,6 +674,47 @@ class RegisterScreenTests(TestCase):
         self.assertIn("#f8e3c4", own_line)
         self.assertIn("#8a5a12", own_line)
         self.assertIn("#f8e3c4", own_toggle)
+
+    def test_payment_toggle_pays_and_clears_without_opening_the_order(self):
+        self.client.get(reverse("pos:register"))
+        self.client.post(reverse("pos:add_line", args=[self.espresso.id]))
+        self.client.post(reverse("pos:order_enqueue"), data={"guest_name": "Жаба"})
+        order = Order.objects.get(guest_name="Жаба")
+        self.assertNotIn(SESSION_ORDER_KEY, self.client.session)
+
+        paid = self.client.post(reverse("pos:queue_pay", args=[order.id]))
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertIsNotNone(order.paid_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertContains(paid, "pay-pill is-paid")
+        self.assertContains(paid, 'aria-label="оплачено"')
+        self.assertNotContains(paid, "q-card-unpaid")
+        self.assertNotContains(paid, 'id="order-panel"')
+        self.assertNotIn(SESSION_ORDER_KEY, self.client.session)
+        icon = paid.content.decode().split('class="pay-pill is-paid"', 1)[1]
+        icon = icon.split("</button>", 1)[0]
+        self.assertIn("stopPropagation", icon)
+
+        cleared = self.client.post(reverse("pos:queue_pay", args=[order.id]))
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+        self.assertIsNone(order.paid_at)
+        self.assertEqual(order.status, Order.Status.IN_PROGRESS)
+        self.assertContains(cleared, "q-card-unpaid")
+        self.assertContains(cleared, 'aria-label="не оплачено"')
+        self.assertNotContains(cleared, "pay-pill is-paid")
+        self.assertNotContains(cleared, 'id="order-panel"')
+        self.assertContains(cleared, "Жаба")
+        self.assertNotIn(SESSION_ORDER_KEY, self.client.session)
+        self.assertIn(order.id, [item.id for item in services.barista_queue("active")])
+
+        again = self.client.post(reverse("pos:queue_pay", args=[order.id]))
+        order.refresh_from_db()
+        self.assertTrue(order.is_paid)
+        self.assertIsNotNone(order.paid_at)
+        self.assertContains(again, "pay-pill is-paid")
+        self.assertNotIn(SESSION_ORDER_KEY, self.client.session)
 
 
 class ShiftScreenTests(TestCase):

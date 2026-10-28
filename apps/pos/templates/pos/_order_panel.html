@@ -98,16 +98,22 @@
     <strong>{{ order.total_amount|rub }}</strong>
   </div>
 
-  <form hx-post="{% url 'pos:order_pay' %}" hx-include="#order-fields" hx-swap="none">
-    {% csrf_token %}
-    {% if order.is_paid %}
-      <button type="button" class="pay-btn is-paid" disabled>Оплачено</button>
-    {% else %}
+  {% if order.is_paid %}
+    <button type="button"
+            class="pay-btn is-paid"
+            hx-post="{% url 'pos:queue_pay' order.id %}"
+            hx-include="[name=queue]"
+            hx-target="#barista-queue"
+            hx-swap="outerHTML"
+            hx-sync="#barista-queue:abort">Оплачено</button>
+  {% else %}
+    <form hx-post="{% url 'pos:order_pay' %}" hx-include="#order-fields" hx-swap="none">
+      {% csrf_token %}
       <button type="submit" class="pay-btn" {% if not order.lines.all %}disabled{% endif %}>
         Оплачено
       </button>
-    {% endif %}
-  </form>
+    </form>
+  {% endif %}
 
   <div class="cart-secondary">
     <form hx-post="{% url 'pos:order_discard' %}" hx-swap="none">

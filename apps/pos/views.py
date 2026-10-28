@@ -723,11 +723,13 @@ def order_discard(request: HttpRequest) -> HttpResponse:
 @open_shift_required
 @require_http_methods(["POST"])
 def queue_pay(request: HttpRequest, pk: int) -> HttpResponse:
-    """Один тап по значку денег в очереди: отметить заказ оплаченным.
+    """Тап по значку денег или по бледной «Оплачено»: переключить оплату.
 
-    Повторный вызов ничего не снимает: оплаченный значок только показывает
-    состояние. Правая кнопка «Оплачено» по-прежнему закрывает чек.
-    Если этот заказ открыт справа, панель перерисовывается вместе с очередью.
+    Неоплаченный заказ отмечается оплаченным. Повторный тап снимает
+    оплату (``is_paid`` и ``paid_at``), готовность не меняет, заказ
+    остаётся в очереди. Карточку этот запрос не открывает: правая
+    колонка перерисовывается, только если заказ уже был открыт.
+    Зелёная «Оплачено» у неоплаченного чека по-прежнему закрывает его.
     """
     order = get_object_or_404(
         Order,
@@ -739,7 +741,10 @@ def queue_pay(request: HttpRequest, pk: int) -> HttpResponse:
         ),
     )
     try:
-        order_services.pay_order(order)
+        if order.is_paid:
+            order_services.unpay_order(order)
+        else:
+            order_services.pay_order(order)
     except ValueError:
         return queue_fragment(request)
     response = queue_fragment(request)
