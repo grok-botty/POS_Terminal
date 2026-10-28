@@ -25,7 +25,9 @@ django.setup()
 project = "CashMachine"
 author = "CashMachine contributors"
 copyright = "2026, CashMachine contributors"
-release = "1.0"
+# Docs version. Windows exe releases are v1.1, v1.2, … on GitHub; this
+# string is the first of that series and is not bumped on every tag.
+release = "1.1"
 
 
 # ---------------------------------------------------------------------------
