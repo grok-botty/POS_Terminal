@@ -1,6 +1,14 @@
-# Build CashMachine.exe on a GitHub-hosted Windows runner.
-# Triggers: every push to main (merged PRs), manual workflow_dispatch,
-# and optional version tags v*.
+# Build CashMachine.exe on a GitHub-hosted Windows runner and publish it.
+#
+# Push to main, and workflow_dispatch on main, after a green build:
+#   - cut the next annotated tag vMAJOR.MINOR (v1.1 when none exist yet)
+#   - publish a GitHub Release for that tag and keep every older v* release
+#   - retarget only the floating tag/release named latest, so
+#     /releases/download/latest/CashMachine.exe stays a stable URL
+#
+# A push of an existing vMAJOR.MINOR tag rebuilds that release and does not
+# allocate another version. Creating the tag with GITHUB_TOKEN does not start
+# a second workflow run; a tag pushed by a person does.
 name: Windows exe
 
 on:
@@ -11,17 +19,33 @@ on:
     tags:
       - "v*"
 
-concurrency:
-  group: windows-exe-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  test-publish-script:
+    name: Test publish script
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test version selection and release notes
+        run: bash .github/scripts/publish-windows-release.test.sh
+
   build:
+    name: Build exe
     runs-on: windows-latest
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      # A newer push to the same ref replaces an in-progress build.
+      # Publish is a separate job, so this cancel cannot cut off a tag push.
+      group: cashmachine-windows-exe-${{ github.ref }}
+      cancel-in-progress: true
     env:
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
@@ -72,63 +96,51 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish rolling latest release
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Continue"
-          $PSNativeCommandUseErrorActionPreference = $false
-          $notes = @"
-          Rolling Windows build of CashMachine.
-
-          - Commit: $env:GITHUB_SHA
-          - Run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
-
-          Double-click CashMachine.exe. On first launch the app migrates SQLite under %LOCALAPPDATA%\CashMachine\ and opens the register.
-          "@
-          gh release delete latest --yes --cleanup-tag
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "No previous latest release to replace."
-          }
-          gh release create latest "dist/CashMachine.exe" `
-            --target $env:GITHUB_SHA `
-            --title "CashMachine (latest Windows build)" `
-            --notes $notes `
-            --latest
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Create failed; uploading over the existing latest release."
-            gh release upload latest "dist/CashMachine.exe" --clobber
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-            gh release edit latest --title "CashMachine (latest Windows build)" --notes $notes --latest
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          }
-
-      - name: Attach exe to version tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Continue"
-          $PSNativeCommandUseErrorActionPreference = $false
-          $tag = "${{ github.ref_name }}"
-          gh release view $tag
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --title $tag --notes "CashMachine $tag" --latest=false
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          }
-          gh release upload $tag "dist/CashMachine.exe" --clobber
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Summarize downloads
+      - name: Summarize artifact
         if: success()
         shell: pwsh
         run: |
           $lines = @(
             "### CashMachine.exe",
             "- Workflow artifact: ``CashMachine-windows`` on this run",
-            "- Rolling release (main, manual dispatch, and version tags): https://github.com/$env:GITHUB_REPOSITORY/releases/download/latest/CashMachine.exe"
+            "- On main and on ``vMAJOR.MINOR`` tags, the publish job attaches this exe to a versioned release and refreshes https://github.com/$env:GITHUB_REPOSITORY/releases/download/latest/CashMachine.exe"
           )
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($lines -join "`n")
+
+  publish:
+    name: Publish release
+    needs: [build, test-publish-script]
+    if: success() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      # One publisher at a time for main and for version tags, so two runs
+      # cannot claim the same next vX.Y or retarget `latest` together.
+      # Do not cancel: a killed job can leave a tag with no exe attached.
+      group: cashmachine-windows-exe-publish
+      cancel-in-progress: false
+    steps:
+      - name: Checkout built commit
+        uses: actions/checkout@v4
+        with:
+          # The exe artifact belongs to this run's SHA. main may move while
+          # the Windows build is still going; do not check out the branch tip.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+
+      - name: Download exe
+        uses: actions/download-artifact@v4
+        with:
+          name: CashMachine-windows
+          path: dist
+
+      - name: Publish versioned release and floating latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXE_PATH: dist/CashMachine.exe
+        run: bash .github/scripts/publish-windows-release.sh
