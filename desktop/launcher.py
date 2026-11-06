@@ -2,8 +2,8 @@
 
 Запускает Django-приложение в фоновом потоке на свободном loopback-порту
 и открывает его в нативном окне через :mod:`pywebview`. Если pywebview
-недоступен (например, пользователь не установил desktop-зависимости),
-лаунчер откроет приложение в системном браузере.
+недоступен или WebView2 не создался, лаунчер открывает системный браузер
+и не гасит уже поднятый сервер.
 
 Файл работает и как обычный скрипт — ``python desktop/launcher.py``, — и
 как точка входа в one-file сборку PyInstaller, собранную по
@@ -28,24 +28,26 @@ from pathlib import Path
 
 LOG = logging.getLogger("cashmachine.launcher")
 
+# Дескриптор замка нельзя отдавать сборщику мусора: закрытый файл
+# отпускает flock/msvcrt, и второй процесс начинает второй migrate.
+_INSTANCE_LOCK = None
+_BROWSER_OPENED = False
+
 
 def _ensure_stdio() -> None:
-    """Подставить настоящие stdout/stderr в оконной сборке PyInstaller.
+    """В оконной сборке направить stdout/stderr в журнал.
 
     При ``console=False`` оба потока равны ``None``. ``print`` это терпит,
-    а ``django runserver`` падает в ``OutputWrapper.write``.
+    а ``django runserver`` падает в ``OutputWrapper.write``. Пишем через
+    logging, чтобы ротация не упиралась в второй открытый дескриптор файла
+    (на Windows его нельзя переименовать).
     """
     frozen = bool(getattr(sys, "frozen", False))
     if sys.stdout is not None and sys.stderr is not None and not frozen:
         return
-    try:
-        stream = (_app_dir() / "cashmachine.log").open(
-            "a", encoding="utf-8", buffering=1
-        )
-    except Exception:
-        if sys.stdout is not None and sys.stderr is not None:
-            return
-        stream = open(os.devnull, "w", encoding="utf-8")
+    from desktop.logsetup import LineLogStream
+
+    stream = LineLogStream()
     sys.stdout = stream
     sys.stderr = stream
 
@@ -74,11 +76,9 @@ os.environ.setdefault("CASHMACHINE_DEBUG", "0")
 
 def _app_dir() -> Path:
     """Каталог пользовательских данных: база, лог и ``cashmachine.url``."""
-    from config.settings import _default_db_path
+    from desktop.bootlog import boot_dir
 
-    path = _default_db_path().parent
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return boot_dir()
 
 
 def _headless() -> bool:
@@ -96,22 +96,13 @@ def _publish_url(url: str) -> None:
     try:
         (_app_dir() / "cashmachine.url").write_text(url + "\n", encoding="utf-8")
     except Exception:
-        LOG.exception("Не удалось записать cashmachine.url")
+        LOG.exception("event=url_file_failed")
 
 
-# Оконный exe не имеет консоли: Django пишет в stdout, его нужно подставить
-# до runserver. В обычном запуске из терминала потоки не трогаем.
-_ensure_stdio()
-
-# Логи пишем в файл рядом с пользовательской БД, чтобы легко собирать отчёты.
-try:
-    logging.basicConfig(
-        filename=str(_app_dir() / "cashmachine.log"),
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-except Exception:  # pragma: no cover - fall back to stderr
-    logging.basicConfig(level=logging.INFO)
+def _startup_timeout() -> float:
+    # One-file распаковка и migrate на холодном диске заметно дольше,
+    # чем запуск из исходников. Срок — monotonic, не настенные часы.
+    return 120.0 if getattr(sys, "frozen", False) else 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -121,36 +112,14 @@ except Exception:  # pragma: no cover - fall back to stderr
 def _pick_port(default: int = 8765) -> int:
     """Вернуть свободный порт, начиная попытки с ``default``."""
     for candidate in (default, 8766, 8767, 0):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
-                s.bind(("127.0.0.1", candidate))
-                _, port = s.getsockname()
+                sock.bind(("127.0.0.1", candidate))
+                _, port = sock.getsockname()
                 return port
             except OSError:
                 continue
     raise RuntimeError("Не найдено свободного loopback-порта.")
-
-
-def _wait_for_server(
-    url: str,
-    timeout: float = 30.0,
-    server: threading.Thread | None = None,
-) -> bool:
-    """Ждать, пока ``url`` ответит HTTP 200."""
-    import urllib.request
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if server is not None and not server.is_alive():
-            LOG.error("Поток сервера завершился до ответа %s", url)
-            return False
-        try:
-            with urllib.request.urlopen(url, timeout=0.5) as r:
-                if r.status == 200:
-                    return True
-        except Exception:
-            time.sleep(0.2)
-    return False
 
 
 def _start_server(host: str, port: int) -> threading.Thread:
@@ -158,6 +127,10 @@ def _start_server(host: str, port: int) -> threading.Thread:
     import django
 
     django.setup()
+
+    from desktop.logsetup import quiet_django_server_log
+
+    quiet_django_server_log()
 
     from apps.pos.bootstrap import ensure_bootstrapped
 
@@ -180,30 +153,103 @@ def _start_server(host: str, port: int) -> threading.Thread:
                 ]
             )
         except SystemExit as exc:
-            LOG.error("runserver завершился: %s", exc)
+            LOG.error("event=server_exit code=%s", getattr(exc, "code", exc))
         except Exception:
-            LOG.exception("runserver упал")
+            LOG.exception("event=server_crash")
 
-    t = threading.Thread(target=_serve, daemon=True, name="django-runserver")
-    t.start()
-    return t
+    thread = threading.Thread(target=_serve, daemon=True, name="django-runserver")
+    thread.start()
+    return thread
+
+
+def _start_heartbeat(url: str, server: threading.Thread, ident: dict[str, str]) -> None:
+    """Раз в минуту записать, жив ли сервер. Это не опрос очереди."""
+
+    def _loop() -> None:
+        from desktop.runtime import wait_for_http
+
+        while True:
+            time.sleep(60)
+            try:
+                ok, detail = wait_for_http(url, timeout=5, server=server)
+                LOG.info(
+                    "event=heartbeat version=%s commit=%s server_alive=%s health=%s detail=%s",
+                    ident["version"],
+                    ident["commit"],
+                    int(server.is_alive()),
+                    int(ok),
+                    detail,
+                )
+            except Exception:
+                LOG.exception("event=heartbeat_error")
+
+    threading.Thread(target=_loop, daemon=True, name="heartbeat").start()
 
 
 # ---------------------------------------------------------------------------
 # Окно
 # ---------------------------------------------------------------------------
 
-def _open_window(url: str, title: str = "CashMachine · Касса 6ки") -> bool:
-    """Открыть ``url`` в нативном окне; вернуть ``False``, если pywebview нет."""
+def _browser_fallback(url: str) -> None:
+    """Открыть браузер один раз, если окна кассы нет."""
+    global _BROWSER_OPENED
+    if _BROWSER_OPENED:
+        return
+    _BROWSER_OPENED = True
+    LOG.info("event=browser_fallback")
+    try:
+        webbrowser.open(url)
+    except Exception:
+        LOG.exception("event=browser_open_failed")
+
+
+def _open_window(url: str, title: str = "CashMachine · Касса 6ки") -> str:
+    """Открыть окно. ``closed`` — пользователь закрыл его, сервер можно гасить.
+
+    ``failed`` и ``unavailable`` означают, что Django ещё жив, а окна нет.
+    Ошибка WebView2 (E_UNEXPECTED) pywebview только пишет в лог и не
+    бросает исключение: ловим её по журналу ``pywebview`` и не называем
+    это смертью сервера.
+    """
     try:
         import webview  # type: ignore
     except ImportError:
-        LOG.warning("pywebview не установлен; открываю системный браузер.")
-        return False
+        LOG.warning("event=webview_unavailable")
+        return "unavailable"
 
-    webview.create_window(title, url=url, width=1280, height=800, min_size=(1024, 640))
-    webview.start(private_mode=False, storage_path=str(BUNDLE / ".webview"))
-    return True
+    failed = {"hit": False}
+
+    class _WebViewErrors(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            text = record.getMessage()
+            if record.levelno < logging.ERROR:
+                return
+            if "initialization failed" not in text and "WebView2" not in text:
+                return
+            failed["hit"] = True
+            LOG.error("event=webview_failed")
+            _browser_fallback(url)
+
+    handler = _WebViewErrors(level=logging.ERROR)
+    py_logger = logging.getLogger("pywebview")
+    py_logger.addHandler(handler)
+    try:
+        from desktop.runtime import prepare_webview_storage
+
+        storage = prepare_webview_storage(_app_dir())
+        webview.create_window(title, url=url, width=1280, height=800, min_size=(1024, 640))
+        LOG.info("event=webview_start")
+        webview.start(private_mode=False, storage_path=str(storage))
+    except Exception:
+        LOG.exception("event=webview_failed")
+        return "failed"
+    finally:
+        py_logger.removeHandler(handler)
+    if failed["hit"]:
+        LOG.error("event=webview_closed reason=after_webview_error")
+        return "failed"
+    LOG.info("event=webview_closed reason=user")
+    return "closed"
 
 
 def _keep_alive() -> int:
@@ -212,15 +258,53 @@ def _keep_alive() -> int:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
+        LOG.info("event=keyboard_interrupt")
         return 0
+
+
+def _windows_notice(text: str) -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(0, text, "CashMachine", 0x40)
+    except Exception:
+        LOG.exception("event=notice_failed")
+
+
+def _configure() -> None:
+    from desktop.bootlog import write_boot
+    from desktop.logsetup import configure_process_logging, install_process_hooks
+
+    write_boot("launcher_main")
+    configure_process_logging(_app_dir() / "cashmachine.log")
+    install_process_hooks()
+    _ensure_stdio()
 
 
 def main() -> int:
     """Точка входа: используется и обычным скриптом, и PyInstaller-сборкой."""
     try:
+        _configure()
+    except Exception:
+        try:
+            from desktop.bootlog import write_boot
+
+            write_boot("log_setup_failed")
+        except Exception:
+            pass
+        raise
+    try:
         return _main()
     except Exception:
-        LOG.exception("Не удалось запустить CashMachine")
+        LOG.exception("event=startup_failed")
+        try:
+            from desktop.bootlog import write_boot
+
+            write_boot("startup_failed")
+        except Exception:
+            pass
         print(
             "Не удалось запустить CashMachine; подробности в cashmachine.log",
             file=sys.stderr,
@@ -230,34 +314,132 @@ def main() -> int:
 
 def _main() -> int:
     """Поднять сервер и открыть окно либо остаться в headless-режиме."""
+    from desktop.identity import runtime_identity
+    from desktop.runtime import acquire_instance_lock
+
+    ident = runtime_identity()
+    LOG.info(
+        "event=process_start version=%s commit=%s pid=%s frozen=%s headless=%s",
+        ident["version"],
+        ident["commit"],
+        os.getpid(),
+        int(bool(getattr(sys, "frozen", False))),
+        int(_headless()),
+    )
+
+    lock = acquire_instance_lock(_app_dir() / "cashmachine.instance.lock")
+    if lock is None:
+        return _attach_to_running(ident)
+    return _serve(ident, lock)
+
+
+def _hold_lock(lock) -> None:
+    global _INSTANCE_LOCK
+    _INSTANCE_LOCK = lock
+
+
+def _serve(ident: dict[str, str], lock) -> int:
+    """Поднять сервер. ``lock`` уже занят этим процессом."""
+    from desktop.runtime import health_url, wait_for_http
+
+    _hold_lock(lock)
     host = "127.0.0.1"
     port = _pick_port()
     url = f"http://{host}:{port}/"
     _publish_url(url)
-
-    LOG.info("Запуск CashMachine на %s (headless=%s)", url, _headless())
+    LOG.info("event=bind url=%s", url)
     print(f"CashMachine стартует на {url}", flush=True)
 
     server = _start_server(host, port)
-    # One-file распаковка и migrate на холодном диске заметно дольше, чем
-    # запуск из исходников.
-    timeout = 120.0 if getattr(sys, "frozen", False) else 30.0
-    if not _wait_for_server(url + "pos/shift/", timeout=timeout, server=server):
+    probe = health_url(url)
+    ok, detail = wait_for_http(probe, timeout=_startup_timeout(), server=server)
+    if not ok:
+        LOG.error(
+            "event=health_failed detail=%s server_alive=%s",
+            detail,
+            int(server.is_alive()),
+        )
         print(
-            "Django-сервер не поднялся; подробности в cashmachine.log",
+            f"Django-сервер не поднялся ({detail}); подробности в cashmachine.log",
             file=sys.stderr,
         )
         return 1
+
+    LOG.info("event=health_ok detail=%s", detail)
+    _start_heartbeat(probe, server, ident)
 
     if _headless():
         print("Режим CASHMACHINE_HEADLESS: окно не открывается.", flush=True)
         return _keep_alive()
 
-    if not _open_window(url):
-        webbrowser.open(url)
-        print("Нажмите Ctrl+C для выхода.", flush=True)
-        return _keep_alive()
-    return 0
+    opened = _open_window(url)
+    if opened == "closed":
+        return 0
+
+    _browser_fallback(url)
+    if opened == "failed":
+        _windows_notice(
+            "Окно WebView2 не открылось. Касса открыта в браузере. "
+            "Сервер Django при этом работает. Чтобы выйти, завершите "
+            "CashMachine в диспетчере задач."
+        )
+    print("Нажмите Ctrl+C для выхода.", flush=True)
+    return _keep_alive()
+
+
+def _attach_to_running(ident: dict[str, str]) -> int:
+    """Второй запуск не мигрирует базу и не поднимает второй сервер.
+
+    Если первый процесс ещё стартует, ждём его health тем же сроком.
+    Окно второго запуска смотрит в уже занятый URL.
+    """
+    from desktop.runtime import health_url, wait_for_http
+
+    LOG.info(
+        "event=already_running version=%s commit=%s pid=%s",
+        ident["version"],
+        ident["commit"],
+        os.getpid(),
+    )
+    print("CashMachine уже запущена, жду существующий сервер.", flush=True)
+    from desktop.runtime import acquire_instance_lock
+
+    url_file = _app_dir() / "cashmachine.url"
+    deadline = time.monotonic() + _startup_timeout()
+    last = "no_url"
+    while time.monotonic() < deadline:
+        # Владелец мог умереть на migrate. Тогда замок свободен и этот
+        # процесс поднимает сервер сам, а не ждёт до таймаута.
+        lock = acquire_instance_lock(_app_dir() / "cashmachine.instance.lock")
+        if lock is not None:
+            LOG.info("event=lock_acquired_after_wait")
+            return _serve(ident, lock)
+        url = ""
+        try:
+            url = url_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            url = ""
+        if url:
+            ok, detail = wait_for_http(health_url(url), timeout=2)
+            if ok:
+                LOG.info("event=attach url=%s", url)
+                print(f"Открываю уже запущенную кассу: {url}", flush=True)
+                if _headless():
+                    return 0
+                opened = _open_window(url)
+                if opened != "closed":
+                    _browser_fallback(url)
+                return 0
+            last = detail
+        else:
+            last = "no_url"
+        time.sleep(0.3)
+    LOG.error("event=already_running_unresponsive detail=%s", last)
+    print(
+        "CashMachine уже запущена, но сервер не отвечает; подробности в cashmachine.log",
+        file=sys.stderr,
+    )
+    return 1
 
 
 if __name__ == "__main__":

@@ -98,6 +98,20 @@ try {
 }
 
 if ($passed) {
+    $bootText = ""
+    $appText = ""
+    if (Test-Path $bootLog) { $bootText = Get-Content -Path $bootLog -Raw }
+    if (Test-Path $appLog) { $appText = Get-Content -Path $appLog -Raw }
+    if ($bootText -notmatch "event=runtime_hook_ok" -or $bootText -notmatch "pid=" -or $bootText -notmatch "commit=") {
+        Write-Host "Boot log has no build identity."
+        Write-LogFile $bootLog
+        exit 1
+    }
+    if ($appText -notmatch "event=health_ok" -or $appText -notmatch "event=process_start") {
+        Write-Host "App log has no health_ok/process_start."
+        Write-LogFile $appLog
+        exit 1
+    }
     exit 0
 }
 

@@ -352,6 +352,26 @@ def _redirect_register() -> HttpResponse:
 # Основной экран
 # ---------------------------------------------------------------------------
 
+@require_http_methods(["GET", "HEAD"])
+def health(request: HttpRequest) -> HttpResponse:
+    """Признак, что процесс слушает порт.
+
+    Не трогает сессию, смену и заказы. Лаунчер ждёт именно этот адрес:
+    ``/pos/shift/`` на анонимном клиенте без cookie каждый раз пишет
+    ``django_session`` и при локе SQLite выглядит как «сервер не поднялся».
+    """
+    try:
+        from desktop.identity import runtime_identity
+
+        ident = runtime_identity()
+        body = f"ok {ident['version']} {ident['commit']}\n"
+    except Exception:
+        body = "ok\n"
+    response = HttpResponse(body, content_type="text/plain; charset=utf-8")
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 @login_required(login_url="accounts:login")
 @open_shift_required
 def register(request: HttpRequest) -> HttpResponse:

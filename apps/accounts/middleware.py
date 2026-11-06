@@ -35,7 +35,12 @@ class AutoAdminMiddleware:
 
     def __call__(self, request):
         path = request.path or ""
-        if not path.startswith("/static/") and not _is_authenticated(request):
+        # /pos/health/ дергает лаунчер без cookie. login() на каждом таком
+        # запросе вставляет новую django_session и сам устраивает
+        # «database is locked», хотя страница смены серверу не нужна.
+        if path.startswith("/static/") or path in {"/pos/health", "/pos/health/"}:
+            return self.get_response(request)
+        if not _is_authenticated(request):
             _attach_demo_admin(request)
         return self.get_response(request)
 

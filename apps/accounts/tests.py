@@ -3,8 +3,9 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model, login as auth_login
+from django.contrib.sessions.models import Session
 from django.db import connection
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.urls import reverse
 
 
@@ -52,6 +53,16 @@ class AutoAdminMiddlewareTests(TestCase):
         self.assertEqual(mocked.call_count, 0)
         self.assertEqual(str(self.client.session["_auth_user_id"]), str(cashier.pk))
         self.assertEqual(self.client.session.session_key, key)
+
+    def test_repeat_shift_views_do_not_insert_more_sessions(self):
+        client = Client()
+        first = client.get(reverse("pos:shift"))
+        self.assertEqual(first.status_code, 200)
+        rows = Session.objects.count()
+        self.assertGreaterEqual(rows, 1)
+        client.get(reverse("pos:shift"))
+        client.get(reverse("pos:shift"))
+        self.assertEqual(Session.objects.count(), rows)
 
 
 class SqliteSetupTests(TestCase):
