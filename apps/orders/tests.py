@@ -2,10 +2,11 @@
 
 from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
-from django.db import IntegrityError, connection
-from django.test import TestCase
+from django.db import IntegrityError
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
 from apps.catalog.models import Category, Modifier, ModifierGroup, Product
@@ -570,3 +571,98 @@ class HandoutAndQueuesTests(TestCase):
         foreign.shift = foreign_shift
         foreign.save(update_fields=["shift"])
         self.assertEqual(services.barista_queue("active"), [])
+
+
+class ShortCodeConcurrencyTests(SimpleTestCase):
+    """Гонка short_code на файловой SQLite, как у кассы.
+
+    Тестовая база Django — shared-cache ``:memory:``. Там SQLite сразу
+    отвечает ``database table is locked`` и не ждёт busy_timeout, поэтому
+    гонка идёт отдельным процессом по файлу. Существующий заказ не
+    переписывается.
+    """
+
+    def test_parallel_creates_retry_the_same_first_code(self) -> None:
+        import subprocess
+        import sys
+        import tempfile
+        import textwrap
+
+        script = textwrap.dedent(
+            """
+            import os, sys, threading
+            from unittest.mock import patch
+            os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+            os.environ["CASHMACHINE_DB_PATH"] = sys.argv[1]
+            import django
+            django.setup()
+            from django.core.management import call_command
+            from django.db import connections
+            call_command("migrate", verbosity=0, interactive=False)
+            from apps.orders import services
+            from apps.orders.models import Order
+            seed = services.create_order(guest_name="уже есть")
+            seed_code = seed.short_code
+            local = threading.local()
+            counter = {"n": 0}
+            counter_lock = threading.Lock()
+
+            def _code():
+                seen = getattr(local, "n", 0)
+                local.n = seen + 1
+                if seen == 0:
+                    return seed_code
+                with counter_lock:
+                    counter["n"] += 1
+                    number = counter["n"]
+                return f"Z{number:05d}"
+
+            errors = []
+            created = []
+            gate = threading.Barrier(8)
+
+            def _worker(index):
+                connections.close_all()
+                try:
+                    gate.wait(timeout=5)
+                    order = services.create_order(guest_name=f"поток-{index}")
+                    created.append(order.pk)
+                except BaseException as exc:
+                    errors.append(f"{type(exc).__name__}: {exc}")
+                finally:
+                    connections.close_all()
+
+            with patch("apps.orders.services._generate_short_code", side_effect=_code):
+                threads = [threading.Thread(target=_worker, args=(i,)) for i in range(8)]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join(timeout=30)
+            codes = list(Order.objects.values_list("short_code", flat=True))
+            seed.refresh_from_db()
+            print("ERRORS", errors)
+            print("ALIVE", any(thread.is_alive() for thread in threads))
+            print("CREATED", len(created))
+            print("COUNT", Order.objects.count())
+            print("UNIQUE", len(codes) == len(set(codes)))
+            print("SEED", seed.short_code == seed_code and seed.guest_name == "уже есть")
+            """
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            database = str(Path(tmp) / "cashmachine.sqlite3")
+            completed = subprocess.run(
+                [sys.executable, "-c", script, database],
+                cwd=str(Path(__file__).resolve().parents[2]),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        detail = completed.stdout + "\n" + completed.stderr
+        self.assertEqual(completed.returncode, 0, detail)
+        self.assertIn("ERRORS []", completed.stdout, detail)
+        self.assertIn("ALIVE False", completed.stdout, detail)
+        self.assertIn("CREATED 8", completed.stdout, detail)
+        self.assertIn("COUNT 9", completed.stdout, detail)
+        self.assertIn("UNIQUE True", completed.stdout, detail)
+        self.assertIn("SEED True", completed.stdout, detail)

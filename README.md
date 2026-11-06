@@ -40,8 +40,10 @@ desktop\build.bat
 
 Готовый бинарник — `dist\CashMachine.exe`. Он поднимает Django на свободном
 loopback-порту и открывает окно pywebview. Данные хранятся в
-`%LOCALAPPDATA%\CashMachine\cashmachine.sqlite3`, лог — в
-`%LOCALAPPDATA%\CashMachine\cashmachine.log`.
+`%LOCALAPPDATA%\CashMachine\cashmachine.sqlite3`, журнал — в
+`%LOCALAPPDATA%\CashMachine\cashmachine.log` (ротация), старт процесса —
+в `cashmachine-boot.log` (pid и commit сборки). Часы в ``wall=`` могут
+врать: порядок внутри процесса задаёт ``mono=``.
 
 Тот же exe собирается на GitHub после каждого обновления `main`. Постоянная
 ссылка на самую новую сборку —

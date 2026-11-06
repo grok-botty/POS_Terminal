@@ -50,6 +50,9 @@ jobs:
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
       CASHMACHINE_DEBUG: "0"
+      # Релизный тег v1.x создаётся следующим job. В exe остаётся commit,
+      # по нему журнал кассы сверяют с релизом.
+      CASHMACHINE_COMMIT: ${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

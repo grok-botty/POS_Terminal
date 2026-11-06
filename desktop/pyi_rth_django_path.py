@@ -49,4 +49,9 @@ if getattr(sys, "frozen", False):
             sys.stdout = sink
         if sys.stderr is None:
             sys.stderr = sink
-    _boot_log("runtime hook ok")
+    try:
+        from desktop.bootlog import write_boot
+
+        write_boot("runtime_hook_ok")
+    except Exception:
+        _boot_log("event=runtime_hook_ok import_failed")

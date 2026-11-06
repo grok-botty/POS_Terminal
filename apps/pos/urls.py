@@ -7,6 +7,7 @@ app_name = "pos"
 
 urlpatterns = [
     path("", views.register, name="register"),
+    path("health/", views.health, name="health"),
     path("shift/", views.shift_screen, name="shift"),
     path("stats/", views.stats, name="stats"),
     path("stats/export/", views.stats_csv, name="stats_csv"),

@@ -100,7 +100,16 @@ exe и обновляет релиз этого тега. Следующая в�
 * Файлы, которые CashMachine создаёт в системе пользователя:
 
   * ``%LOCALAPPDATA%\CashMachine\cashmachine.sqlite3`` — SQLite-БД.
-  * ``%LOCALAPPDATA%\CashMachine\cashmachine.log`` — журнал.
+  * ``%LOCALAPPDATA%\CashMachine\cashmachine.log`` — журнал процесса
+    (ротация, около 1 МБ × 3). Успешные опросы ``/pos/queue/`` туда не
+    пишутся.
+  * ``%LOCALAPPDATA%\CashMachine\cashmachine-boot.log`` — короткая
+    строка старта: pid, commit сборки, ``wall=`` (часы ноутбука, им
+    нельзя верить) и ``mono=``.
+  * ``%LOCALAPPDATA%\CashMachine\cashmachine.instance.lock`` — замок
+    одного процесса. Файл не удалять, пока касса запущена.
+  * ``%LOCALAPPDATA%\CashMachine\webview\<pid>\`` — профиль окна
+    WebView2 этого запуска.
 
 Настройки для продакшена
 ------------------------
@@ -118,13 +127,51 @@ exe и обновляет релиз этого тега. Следующая в�
 Диагностика
 -----------
 
-* ``dist\CashMachine.exe`` не открывает окно, но в трее видно процесс:
-  проверьте ``cashmachine.log``, часто это конфликт с уже занятым портом
-  8765/8766/8767 — лаунчер выбирает следующий свободный автоматически.
+Журнал смешивает ``asctime`` (настенные часы ноутбука, на этой кассе они
+прыгают) и ``mono=`` — секунды от старта процесса. Порядок событий внутри
+одного ``pid`` читается по ``mono``. Commit сборки — поле ``commit=`` в
+``event=process_start`` и в boot-журнале. Номер ``v1.x`` присваивается
+релизу уже после сборки exe, поэтому в файле его может не быть: сверяйте
+commit с коммитом релиза на GitHub.
+
+* ``event=health_ok`` — Django слушает порт. Это не страница смены.
+* ``event=health_failed`` — процесс не дождался HTTP 200 от ``/pos/health/``.
+  В ``detail`` будет ``server_thread_dead``, ``URLError`` или код ответа.
+  Это единственный случай, когда лаунчер пишет, что сервер не поднялся.
+* ``event=webview_failed`` — не создался WebView2 (в том числе
+  ``E_UNEXPECTED``). Сервер при этом не гасится, касса открывается в
+  браузере. ``event=webview_closed reason=user`` — окно закрыл человек.
+* ``event=already_running`` и ``event=attach`` — второй двойной щелчок
+  подключился к уже живому серверу и не запускал migrate.
+* ``event=process_exit`` — процесс завершился. Рядом нет
+  ``event=uncaught`` / ``event=server_crash`` — это не падение Python.
 * Ошибка «Missing WebView2 runtime»: установите
   `Evergreen Bootstrapper
   <https://developer.microsoft.com/en-us/microsoft-edge/webview2/>`_.
 * Логи PyInstaller живут в ``build\pyinstaller_spec\warn-*.txt``.
+
+Проверка обновления, не трогая базу
+------------------------------------
+
+Эти шаги выполняются на кассовом ноутбуке. Они не удаляют SQLite и не
+вызывают ``migrate`` вручную.
+
+1. Скопируйте ``cashmachine.sqlite3`` рядом (страховка). Рабочий файл
+   не переименовывайте и не удаляйте.
+2. Закройте уже запущенный CashMachine через крестик или диспетчер задач.
+3. Замените exe новым файлом и запустите его один раз.
+4. Откройте смену как обычно: дата и время вручную, имя кассира.
+   Старые заказы должны остаться на своих местах. Пробейте один
+   тестовый заказ.
+5. В ``cashmachine-boot.log`` есть ``event=runtime_hook_ok`` с ``pid=``,
+   ``commit=`` и ``wall_clock=unreliable``.
+6. В ``cashmachine.log`` есть ``event=process_start`` с тем же commit и
+   следом ``event=health_ok``. После закрытия окна —
+   ``event=webview_closed reason=user``.
+7. Не закрывая первую копию, запустите exe ещё раз. Второй процесс пишет
+   ``event=already_running`` и ``event=attach`` и не создаёт вторую базу.
+8. Если окно пустое, а в журнале ``event=webview_failed``, касса должна
+   открыться в браузере. Это сбой WebView2, не «Django не поднялся».
 
 Обновление
 ----------

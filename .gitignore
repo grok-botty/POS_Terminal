@@ -23,6 +23,7 @@ docs/_build_db.sqlite3
 build/
 dist/
 *.manifest
+desktop/build_info.py
 
 # Sphinx
 docs/build/

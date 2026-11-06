@@ -13,6 +13,7 @@ name) and pywebview.
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +32,37 @@ os.environ.setdefault(
     str(PROJECT_ROOT / "build" / "pyinstaller-spec.sqlite3"),
 )
 os.environ.setdefault("CASHMACHINE_DEBUG", "0")
+
+def _write_build_info() -> None:
+    """Зашить commit в exe. Тег v1.x появляется только после этой сборки."""
+
+    def _git(*args: str) -> str:
+        try:
+            return subprocess.check_output(
+                ["git", *args],
+                cwd=PROJECT_ROOT,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception:
+            return ""
+
+    commit = os.environ.get("CASHMACHINE_COMMIT", "").strip() or _git("rev-parse", "HEAD") or "unknown"
+    version = (
+        os.environ.get("CASHMACHINE_VERSION", "").strip()
+        or _git("describe", "--tags", "--always")
+        or commit[:12]
+    )
+    target = PROJECT_ROOT / "desktop" / "build_info.py"
+    target.write_text(
+        '"""Сгенерировано desktop/pyinstaller_spec.spec. Не коммитить."""\n'
+        f"VERSION = {version!r}\n"
+        f"COMMIT = {commit!r}\n",
+        encoding="utf-8",
+    )
+
+
+_write_build_info()
 
 import django  # noqa: E402
 
@@ -65,6 +97,12 @@ hiddenimports += collect_submodules("whitenoise")
 hiddenimports += collect_submodules("apps", filter=_bundle_module, on_error="ignore")
 hiddenimports += collect_submodules("config", filter=_bundle_module, on_error="ignore")
 hiddenimports += [
+    "desktop",
+    "desktop.identity",
+    "desktop.bootlog",
+    "desktop.runtime",
+    "desktop.logsetup",
+    "desktop.build_info",
     "apps.accounts",
     "apps.accounts.migrations",
     "apps.catalog",
